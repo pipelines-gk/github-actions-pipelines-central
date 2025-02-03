@@ -13,6 +13,9 @@ on:
       env_file_artifact:
         required: true
         type: string
+      github_token:
+        required: true
+        type: string
     secrets:
       GH_TOKEN:
         required: true
@@ -43,6 +46,7 @@ jobs:
         with:
           name: ${{ inputs.env_file_artifact }}
           path: .
+          github-token: ${{ inputs.github_token }}
 
       - name: Verify .env file
         run: |
