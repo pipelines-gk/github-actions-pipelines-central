@@ -10,6 +10,9 @@ on:
         required: false
         default: "22"
         type: string
+      env_content:
+        required: true
+        type: string
     secrets:
       GH_TOKEN:
         required: true
@@ -17,15 +20,13 @@ on:
         required: true
       DOCR_PASSWORD:
         required: true
-    outputs:
-      ENV_CONTENT:
-        description: "Environment variables from .env"
-        value: ${{ jobs.build-and-push.outputs.ENV_CONTENT }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      ENV_CONTENT: ${{ inputs.env_content }} # ✅ Se pasa `ENV_CONTENT` como variable de entorno
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
