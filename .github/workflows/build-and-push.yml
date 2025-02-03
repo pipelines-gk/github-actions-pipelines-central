@@ -57,6 +57,16 @@ jobs:
           github-token: ${{ inputs.github_token }}
           run-id: ${{ inputs.run_id }}
 
+      - name: Create .env from artifact
+        run: |
+          echo "🔍 Creando .env desde artifact..."
+          if [ ! -f "raw_content.txt" ]; then
+            echo "❌ ERROR: Archivo raw_content.txt no encontrado"
+            exit 1
+          fi
+          cat raw_content.txt | grep -v '^#' > .env
+          echo "✅ Archivo .env creado"
+
       - name: Verify .env file
         run: |
           echo "🔍 Verificando archivo .env..."
