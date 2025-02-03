@@ -49,6 +49,12 @@ jobs:
           node-version: ${{ inputs.node_version }}
           cache: "npm"
 
+      #   LOG DOCR_USERNAME AND DOCR_PASSWORD
+      - name: Log DOCR Credentials
+        run: |
+          echo "DOCR_USERNAME: ${{ secrets.DOCR_USERNAME }}"
+          echo "DOCR_PASSWORD: ${{ secrets.DOCR_PASSWORD }}"
+
       - name: Download .env file
         uses: actions/download-artifact@v4
         with:
