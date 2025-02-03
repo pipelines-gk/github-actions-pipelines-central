@@ -16,6 +16,9 @@ on:
       github_token:
         required: true
         type: string
+      run_id:
+        required: true
+        type: string
     secrets:
       GH_TOKEN:
         required: true
@@ -23,6 +26,11 @@ on:
         required: true
       DOCR_PASSWORD:
         required: true
+
+permissions:
+  contents: read
+  packages: write
+  actions: read
 
 jobs:
   build-and-push:
@@ -47,6 +55,7 @@ jobs:
           name: ${{ inputs.env_file_artifact }}
           path: .
           github-token: ${{ inputs.github_token }}
+          run-id: ${{ inputs.run_id }}
 
       - name: Verify .env file
         run: |
