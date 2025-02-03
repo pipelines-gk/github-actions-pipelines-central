@@ -13,9 +13,6 @@ on:
       env_file_artifact:
         required: true
         type: string
-      github_token:
-        required: true
-        type: string
       run_id:
         required: true
         type: string
@@ -39,7 +36,6 @@ jobs:
           echo "PROJECT_NAME: ${{ inputs.project_name }}"
           echo "NODE_VERSION: ${{ inputs.node_version }}"
           echo "ENV_FILE_ARTIFACT: ${{ inputs.env_file_artifact }}"
-          echo "GITHUB_TOKEN: ${{ inputs.github_token }}"
           echo "RUN_ID: ${{ inputs.run_id }}"
 
       - name: Checkout code
@@ -59,7 +55,6 @@ jobs:
         with:
           name: ${{ inputs.env_file_artifact }}
           path: .
-          github-token: ${{ inputs.github_token }}
           run-id: ${{ inputs.run_id }}
 
       - name: Create .env from artifact
