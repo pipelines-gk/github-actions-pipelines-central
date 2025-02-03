@@ -30,14 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      # READ INPIUTS
-      - name: Read Inputs
-        run: |
-          echo "PROJECT_NAME: ${{ inputs.project_name }}"
-          echo "NODE_VERSION: ${{ inputs.node_version }}"
-          echo "ENV_FILE_ARTIFACT: ${{ inputs.env_file_artifact }}"
-          echo "RUN_ID: ${{ inputs.run_id }}"
-
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -50,49 +42,20 @@ jobs:
           node-version: ${{ inputs.node_version }}
           cache: "npm"
 
-      - name: Download .env file
+      - name: Download and prepare .env
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.env_file_artifact }}
           path: .
           run-id: ${{ inputs.run_id }}
 
-      - name: Create .env from artifact
+      - name: Process .env
         run: |
-          echo "🔍 Creando .env desde artifact..."
-          if [ ! -f "raw_content.txt" ]; then
-            echo "❌ ERROR: Archivo raw_content.txt no encontrado"
-            exit 1
-          fi
           cat raw_content.txt | grep -v '^#' > .env
-          echo "✅ Archivo .env creado"
-
-      - name: Extract DOCR Credentials
-        id: extract_docr
-        run: |
-          echo "🔍 Extrayendo credenciales DOCR del .env..."
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
-
-          if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
-            echo "❌ ERROR: No se encontraron las credenciales DOCR"
-            exit 1
-          fi
-
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
-          echo "✅ Credenciales DOCR extraídas"
-
-      - name: Verify .env file
-        run: |
-          echo "🔍 Verificando archivo .env..."
-          if [ ! -f ".env" ]; then
-            echo "❌ ERROR: Archivo .env no encontrado"
-            exit 1
-          fi
-          echo "📊 Tamaño: $(wc -c < .env) bytes"
-          echo "📊 Variables: $(grep -c "=" .env)"
-          echo "✅ Archivo .env verificado"
 
       - name: Install dependencies
         run: npm ci
