@@ -23,6 +23,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: onepassword-content
+          path: .
+
+      - name: Create .env from Artifact
+        run: |
+          echo "🔍 Creando .env desde artifact..."
+          cat raw_content.txt | grep -v '^#' > .env
+          echo "✅ Archivo .env creado"
+
+      - name: Export Variables to Environment
+        run: |
+          echo "📤 Exportando variables al ambiente..."
+          cat raw_content.txt | grep -v '^#' | while IFS= read -r line; do
+            echo "$line" >> $GITHUB_ENV
+          done
+          echo "✅ Variables exportadas"
+
+      - name: Verify .env Content
+        run: |
+          echo "📝 Contenido del .env (sanitizado):"
+          cat .env | sed 's/=.*/=***/'
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
