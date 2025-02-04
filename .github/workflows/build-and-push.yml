@@ -13,9 +13,6 @@ on:
       env_file_artifact:
         required: true
         type: string
-      run_id:
-        required: true
-        type: string
     secrets:
       GH_TOKEN:
         required: true
