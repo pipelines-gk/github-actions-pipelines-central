@@ -47,7 +47,6 @@ jobs:
         with:
           name: ${{ inputs.env_file_artifact }}
           path: .
-          run-id: ${{ inputs.run_id }}
 
       - name: Process .env
         run: |
