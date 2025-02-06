@@ -18,9 +18,9 @@ on:
         required: true
 
 permissions:
-  contents: read
-  packages: write
-  actions: read
+  contents: read # Read access to repository content
+  packages: write # Write access to packages
+  actions: read # Read access to actions
 
 jobs:
   build-and-push:
@@ -37,36 +37,62 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
-          cache: "npm"
+          cache: npm # Cache npm dependencies
 
-      - name: Download and prepare .env
+      - name: Download and prepare environment file
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.env_file_artifact }}
           path: .
 
-      - name: Process .env
+      - name: Process .env file
         run: |
+          # Remove comment lines and create .env file
           cat raw_content.txt | grep -v '^#' > .env
+
+          # Extract DigitalOcean credentials from .env
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
+          if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
+            echo "DigitalOcean credentials not found in .env"
+            exit 1
+          fi
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
+
+          # Extract VERSION from .env, if not found assign default
+          VERSION=$(grep "^VERSION=" .env | cut -d'=' -f2)
+          if [ -z "$VERSION" ]; then
+            echo "VERSION variable not found in .env, defaulting to 0.0.0"
+            VERSION="0.0.0"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Docker Setup
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        # Setup Buildx for multi-platform builds
 
-      - name: Login to DOCR
+      - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
         with:
           registry: registry.digitalocean.com
           username: ${{ env.DOCR_USERNAME }}
           password: ${{ env.DOCR_PASSWORD }}
+        # Login to DigitalOcean registry using credentials from .env
 
-      - name: Build and Push Docker Image
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+        # Cache the Docker build layers to speed up subsequent builds
+
+      - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -74,5 +100,29 @@ jobs:
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:${{ github.sha }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+        # Build the Docker image and push it to DigitalOcean registry with multiple tags
+
+      - name: Update Docker cache
+        run: |
+          # Replace old cache with new one
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "🚀 Deployment successful"
+          echo "Image published with the following tags:"
+          echo "  - latest"
+          echo "  - v${{ env.VERSION }}"
+          echo "  - ${{ github.sha }}"
+        # Notify on successful deployment
+
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed"
+        # Notify on deployment failure
