@@ -2,13 +2,7 @@ name: Vulnerability Analysis
 
 # Trigger on push, pull_request, schedule and manual dispatch
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: "0 0 * * 0" # Weekly analysis on Sundays at midnight
-  workflow_dispatch: {}
+  workflow_call:
 
 jobs:
   codeql:
