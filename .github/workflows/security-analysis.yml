@@ -5,13 +5,13 @@ on:
   workflow_call:
 
 jobs:
-#   codeql:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout repository
-#         uses: actions/checkout@v4
-#         # Check out the repository code
+  codeql:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+        # Check out the repository code
 #       - name: Initialize CodeQL
 #         uses: github/codeql-action/init@v2
 #         with:
