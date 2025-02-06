@@ -1,0 +1,38 @@
+name: Vulnerability Analysis
+
+# Trigger on push, pull_request, schedule and manual dispatch
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * 0" # Weekly analysis on Sundays at midnight
+  workflow_dispatch: {}
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # Read access for actions
+      contents: read # Read access for repository content
+      security-events: write # Write access to report security alerts
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # Check out the repository code
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript,typescript # Analyze JavaScript and TypeScript code
+        # Initialize CodeQL engine
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+        # Attempt to automatically build the code
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        # Execute the CodeQL analysis and upload the results
