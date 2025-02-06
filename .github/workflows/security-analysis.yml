@@ -6,12 +6,7 @@ on:
 
 jobs:
   codeql:
-    name: CodeQL Analysis
     runs-on: ubuntu-latest
-    permissions:
-      actions: read # Read access for actions
-      contents: read # Read access for repository content
-      security-events: write # Write access to report security alerts
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
