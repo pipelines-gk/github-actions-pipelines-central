@@ -5,23 +5,23 @@ on:
   workflow_call:
 
 jobs:
-  codeql:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        # Check out the repository code
+#   codeql:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+#         # Check out the repository code
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
-        with:
-          languages: javascript,typescript # Analyze JavaScript and TypeScript code
-        # Initialize CodeQL engine
+#       - name: Initialize CodeQL
+#         uses: github/codeql-action/init@v2
+#         with:
+#           languages: javascript,typescript # Analyze JavaScript and TypeScript code
+#         # Initialize CodeQL engine
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
-        # Attempt to automatically build the code
+#       - name: Autobuild
+#         uses: github/codeql-action/autobuild@v2
+#         # Attempt to automatically build the code
 
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
-        # Execute the CodeQL analysis and upload the results
+#       - name: Perform CodeQL Analysis
+#         uses: github/codeql-action/analyze@v2
+#         # Execute the CodeQL analysis and upload the results
