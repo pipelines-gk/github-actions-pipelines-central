@@ -6,13 +6,14 @@ on:
 jobs:
   notify_slack:
     runs-on: ubuntu-latest
+    if: always() # 🔹 Esto asegura que se ejecuta incluso si el workflow falla
     steps:
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
-              "text": "🚀 Workflow *${{ github.workflow }}* terminó en *${{ github.event.workflow_run.conclusion }}* en *${{ github.repository }}*",
+              "text": "${{ (job.status == 'success') && '🚀' || '❌' }} Workflow *${{ github.workflow }}* terminó con estado *${{ job.status }}* en *${{ github.repository }}*",
               "attachments": [
                 {
                   "text": "🔗 Ver detalles en GitHub",
