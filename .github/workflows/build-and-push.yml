@@ -75,6 +75,12 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      - name: Debug .env file (development only)
+        run: |
+          echo "=== .env file content ==="
+          cat .env
+        # Print the content of .env file for development purposes, remove after debugging
+
       - name: Install dependencies
         run: npm ci
 
