@@ -45,6 +45,13 @@ jobs:
           name: ${{ inputs.env_file_artifact }}
           path: .
 
+      - name: Verify .env file exists
+        run: |
+          if [ ! -f "raw_content.txt" ]; then
+            echo "❌ Error: .env file not found"
+            exit 1
+          fi
+
       - name: Process .env file
         run: |
           # Remove comment lines and create .env file
