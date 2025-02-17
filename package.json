@@ -1,0 +1,10 @@
+{
+	"name": "github-actions-pipeline-central",
+	"private": true,
+	"scripts": {
+		"formatlint": "npx biome format . --write && npx biome lint . --diagnostic-level=error"
+	},
+	"dependencies": {
+		"@biomejs/biome": "^1.9.4"
+	}
+}
