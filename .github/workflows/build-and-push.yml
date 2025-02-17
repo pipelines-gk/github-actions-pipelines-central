@@ -10,9 +10,6 @@ on:
         required: false
         default: "22"
         type: string
-      env_file_artifact:
-        required: true
-        type: string
     secrets:
       GH_TOKEN:
         required: true
@@ -42,7 +39,7 @@ jobs:
       - name: Download and prepare environment file
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.env_file_artifact }}
+          name: ${{ inputs.project_name }}
           path: .
 
       - name: Verify .env file exists
