@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,6 +36,7 @@ jobs:
       - name: Find the generated SARIF file
         run: |
           mkdir -p results
+          # Busca cualquier archivo SARIF generado en el workspace
           SARIF_PATH=$(find /home/runner/work/ -type f -name "*.sarif" 2>/dev/null | head -n 1)
           if [[ -f "$SARIF_PATH" ]]; then
             echo "SARIF file found: $SARIF_PATH"
@@ -44,9 +46,9 @@ jobs:
             echo '{"runs":[]}' > results/javascript.sarif
           fi
 
-      - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Upload SARIF as artifact
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: results/javascript.sarif
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          name: codeql-report
+          path: results/javascript.sarif
+          retention-days: 1
