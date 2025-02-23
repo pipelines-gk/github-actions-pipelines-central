@@ -2,6 +2,13 @@ name: Release Please
 
 on:
   workflow_call:
+    inputs:
+      project_name:
+        required: true
+        type: string
+    secrets:
+      GH_TOKEN:
+        required: true
 
 permissions:
   contents: write
@@ -16,4 +23,4 @@ jobs:
         with:
           token: ${{ secrets.GH_TOKEN }}
           release-type: node
-          package-name: ${{ github.event.repository.name }}
+          package-name: ${{ inputs.project_name }}
