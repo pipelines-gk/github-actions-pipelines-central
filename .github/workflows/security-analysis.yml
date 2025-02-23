@@ -30,9 +30,13 @@ jobs:
           category: "security"
           upload-database: false  # Evitamos el intento de subir el resultado
 
+      - name: List files in workspace
+        run: ls -R
+
       - name: Upload Security report as artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: codeql-report
-          path: results/javascript.sarif
+          path: "**/*.sarif" 
           retention-days: 1
