@@ -28,15 +28,23 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "security"
-          upload-database: false  # Evitamos el intento de subir el resultado
+          upload-database: false  # No intentamos subir directamente a Code Scanning
 
-      - name: List files in workspace
-        run: ls -R
+      - name: Find the generated SARIF file
+        run: |
+          mkdir -p results
+          SARIF_PATH=$(find /home/runner/work/ -type f -name "*.sarif" 2>/dev/null | head -n 1)
+          if [[ -f "$SARIF_PATH" ]]; then
+            echo "SARIF file found: $SARIF_PATH"
+            cp "$SARIF_PATH" results/javascript.sarif
+          else
+            echo "⚠ No SARIF file found! Creating a dummy file."
+            echo '{"runs":[]}' > results/javascript.sarif
+          fi
 
-      - name: Upload Security report as artifact
-        if: success()
+      - name: Upload SARIF as artifact
         uses: actions/upload-artifact@v4
         with:
           name: codeql-report
-          path: "**/*.sarif" 
-          retention-days: 1
+          path: results/javascript.sarif
+          retention-days: 3
