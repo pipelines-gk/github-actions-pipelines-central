@@ -2,6 +2,9 @@ name: Vulnerability Analysis
 
 on:
   workflow_call:
+    secrets:
+      GH_TOKEN:
+        required: true
 
 jobs:
   codeql:
