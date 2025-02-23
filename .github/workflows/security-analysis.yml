@@ -9,9 +9,6 @@ on:
 jobs:
   codeql:
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,7 +33,6 @@ jobs:
       - name: Find the generated SARIF file
         run: |
           mkdir -p results
-          # Busca cualquier archivo SARIF generado en el workspace
           SARIF_PATH=$(find /home/runner/work/ -type f -name "*.sarif" 2>/dev/null | head -n 1)
           if [[ -f "$SARIF_PATH" ]]; then
             echo "SARIF file found: $SARIF_PATH"
