@@ -1,8 +1,15 @@
 name: Vulnerability Analysis
 
-# Trigger on push, pull_request, schedule and manual dispatch
 on:
   workflow_call:
+
+concurrency:
+  group: security-analysis-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  security-events: write  # Necesario para subir reportes de CodeQL
+  contents: read          # Permite leer el código fuente del repositorio
 
 jobs:
   codeql:
@@ -10,18 +17,23 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Necesario para análisis de CodeQL con histórico completo
 
-        # Check out the repository code
-#       - name: Initialize CodeQL
-#         uses: github/codeql-action/init@v2
-#         with:
-#           languages: javascript,typescript # Analyze JavaScript and TypeScript code
-#         # Initialize CodeQL engine
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript,typescript  # Analiza JavaScript y TypeScript
+          queries: +security-and-quality  # Añade análisis de calidad de código además de seguridad
+          config-file: .github/codeql-config.yml  # Opcional: usar un archivo de configuración personalizado
+          database-cache: true  # Habilita cacheo de la base de datos de CodeQL
 
-#       - name: Autobuild
-#         uses: github/codeql-action/autobuild@v2
-#         # Attempt to automatically build the code
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
 
-#       - name: Perform CodeQL Analysis
-#         uses: github/codeql-action/analyze@v2
-#         # Execute the CodeQL analysis and upload the results
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "security"  # Define una categoría para los reportes de seguridad
+          upload-database: true  # Permite inspeccionar la base de datos en GitHub si es necesario
+          fail-on-error: true  # Fallará si se detectan vulnerabilidades críticas
