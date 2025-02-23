@@ -35,3 +35,4 @@ jobs:
         with:
           name: codeql-report
           path: results/javascript.sarif
+          retention-days: 1
