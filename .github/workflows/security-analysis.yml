@@ -8,8 +8,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  security-events: write  # Necesario para subir reportes de CodeQL
-  contents: read          # Permite leer el código fuente del repositorio
+  security-events: write  # Required to upload CodeQL reports
+  contents: read          # Allows reading the repository source code
 
 jobs:
   codeql:
@@ -18,22 +18,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Necesario para análisis de CodeQL con histórico completo
+          fetch-depth: 0  # Required for CodeQL analysis with full history
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
-          languages: javascript,typescript  # Analiza JavaScript y TypeScript
-          queries: +security-and-quality  # Añade análisis de calidad de código además de seguridad
-          config-file: .github/codeql-config.yml  # Opcional: usar un archivo de configuración personalizado
-          database-cache: true  # Habilita cacheo de la base de datos de CodeQL
+          languages: javascript,typescript  # Analyzes JavaScript and TypeScript
+          queries: +security-and-quality  # Adds code quality analysis as well
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
+        uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
         with:
-          category: "security"  # Define una categoría para los reportes de seguridad
-          upload-database: true  # Permite inspeccionar la base de datos en GitHub si es necesario
-          fail-on-error: true  # Fallará si se detectan vulnerabilidades críticas
+          category: "security"  # Defines a category for security reports
+          upload-database: true  # Allows inspecting the database on GitHub if needed
+          fail-on-error: true  # Will fail if critical vulnerabilities are detected
