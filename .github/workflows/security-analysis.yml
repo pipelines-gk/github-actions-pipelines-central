@@ -2,17 +2,6 @@ name: Vulnerability Analysis
 
 on:
   workflow_call:
-    secrets:
-      GH_TOKEN:
-        required: true
-
-concurrency:
-  group: security-analysis-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  security-events: write  # Necesario para subir reportes de CodeQL
-  contents: read          # Permite leer el código fuente del repositorio
 
 jobs:
   codeql:
@@ -21,7 +10,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Necesario para análisis de CodeQL con histórico completo
+          fetch-depth: 0
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -36,4 +25,10 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "security"
-          upload-database: true
+          upload-database: false  # Evitamos el intento de subir el resultado
+
+      - name: Upload Security report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-report
+          path: results/javascript.sarif
