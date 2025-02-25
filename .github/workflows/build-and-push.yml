@@ -39,7 +39,6 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
           cache: npm  # Cache npm dependencies
-          cache-dependency-path: ${{ inputs.workdir }}/package-lock.json  # 🔹 Se aplica en el directorio especificado
 
       - name: Change to workdir
         run: cd ${{ inputs.workdir }}
