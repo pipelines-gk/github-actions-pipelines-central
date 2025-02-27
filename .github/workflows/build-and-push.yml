@@ -107,7 +107,7 @@ jobs:
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ${{ inputs.workdir }}  # 🔹 Usa el directorio correcto
+          context: .
           file: ${{ inputs.workdir }}/${{ inputs.dockerfile }}  # 🔹 Usa el Dockerfile correcto
           push: true
           tags: |
