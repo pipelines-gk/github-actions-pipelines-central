@@ -14,6 +14,11 @@ on:
         description: "Directorio donde se ejecutarán los comandos"
         required: false
         type: string
+      dockerfile:
+        description: "Archivo Dockerfile a utilizar"
+        required: false
+        type: string
+        default: "Dockerfile"
     secrets:
       GH_TOKEN:
         required: true
@@ -105,6 +110,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ${{ inputs.workdir }}  # 🔹 Usa el directorio correcto
+          file: ${{ inputs.workdir }}/${{ inputs.dockerfile }}  # 🔹 Usa el Dockerfile correcto
           push: true
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
