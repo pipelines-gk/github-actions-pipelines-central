@@ -1,27 +1,42 @@
 name: Slack Notification Workflow
 
 on:
-  workflow_call:
+  workflow_call: {}
 
 jobs:
   notify_slack:
     runs-on: ubuntu-latest
-    if: always() # 🔹 Esto asegura que se ejecuta incluso si el workflow falla
+    if: always() # ✅ Esto asegura que se ejecuta aunque el workflow falle
     steps:
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
-              "text": "${{ (job.status == 'success') && '🚀' || '❌' }} Workflow *${{ github.workflow }}* terminó con estado *${{ job.status }}* en *${{ github.repository }}*",
+              "text": "${{ job.status == 'success' && '🚀' || '❌' }} Workflow *${{ github.workflow }}* terminó con estado *${{ job.status }}* en *${{ github.repository }}*",
               "attachments": [
                 {
-                  "text": "🔗 Ver detalles en GitHub",
-                  "actions": [
+                  "color": "${{ job.status == 'success' && 'good' || 'danger' }}",
+                  "blocks": [
                     {
-                      "type": "button",
-                      "text": "Abrir GitHub",
-                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": "*Commit:* ${{ github.event.head_commit.message || 'Manual workflow dispatch' }}\n*Branch:* ${{ github.ref_name }}"
+                      }
+                    },
+                    {
+                      "type": "actions",
+                      "elements": [
+                        {
+                          "type": "button",
+                          "text": {
+                            "type": "plain_text",
+                            "text": "Ver en GitHub"
+                          },
+                          "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                        }
+                      ]
                     }
                   ]
                 }
