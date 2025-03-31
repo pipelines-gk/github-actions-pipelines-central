@@ -39,53 +39,12 @@ jobs:
         with:
           payload: |
             {
-              "blocks": [
+              "text": "${{ steps.vars.outputs.emoji }} *${{ github.workflow }}*",
+              "attachments": [
                 {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "${{ steps.vars.outputs.emoji }} ${{ github.workflow }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "fields": [
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Estado:*\n${{ inputs.workflow_status }}"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Repositorio:*\n${{ github.repository }}"
-                    }
-                  ]
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Commit:*\n${{ fromJson(steps.commit.outputs.message) }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Branch:*\n${{ github.ref_name }}"
-                  }
-                },
-                {
-                  "type": "actions",
-                  "elements": [
-                    {
-                      "type": "button",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "Ver en GitHub"
-                      },
-                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                    }
-                  ]
+                  "color": "${{ steps.vars.outputs.color }}",
+                  "text": "*Estado:* ${{ inputs.workflow_status }}\n*Repositorio:* ${{ github.repository }}\n*Commit:* ${{ fromJson(steps.commit.outputs.message) }}\n*Branch:* ${{ github.ref_name }}",
+                  "fallback": "Ver detalles en GitHub: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                 }
               ]
             }
