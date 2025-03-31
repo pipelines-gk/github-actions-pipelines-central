@@ -23,6 +23,13 @@ jobs:
             echo "color=danger" >> $GITHUB_OUTPUT
           fi
 
+      - name: Escape commit message
+        id: commit
+        run: |
+          COMMIT_MESSAGE="${{ github.event.head_commit.message || 'Manual workflow dispatch' }}"
+          COMMIT_MESSAGE_ESCAPED=$(jq -Rn --arg msg "$COMMIT_MESSAGE" '$msg')
+          echo "message=$COMMIT_MESSAGE_ESCAPED" >> $GITHUB_OUTPUT
+
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
         with:
@@ -37,7 +44,7 @@ jobs:
                       "type": "section",
                       "text": {
                         "type": "mrkdwn",
-                        "text": "*Commit:* ${{ github.event.head_commit.message || 'Manual workflow dispatch' }}\n*Branch:* ${{ github.ref_name }}"
+                        "text": "*Commit:* ${{ steps.commit.outputs.message }}\n*Branch:* ${{ github.ref_name }}"
                       }
                     },
                     {
