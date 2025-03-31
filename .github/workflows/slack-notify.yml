@@ -12,15 +12,26 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
+      - name: Set Slack Message Variables
+        id: vars
+        run: |
+          if [[ "${{ inputs.workflow_status }}" == "success" ]]; then
+            echo "emoji=🚀" >> $GITHUB_OUTPUT
+            echo "color=good" >> $GITHUB_OUTPUT
+          else
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+            echo "color=danger" >> $GITHUB_OUTPUT
+          fi
+
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
-              "text": "${{ inputs.workflow_status == 'success' && '🚀' || '❌' }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
+              "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
               "attachments": [
                 {
-                  "color": "${{ inputs.workflow_status == 'success' && 'good' || 'danger' }}",
+                  "color": "${{ steps.vars.outputs.color }}",
                   "blocks": [
                     {
                       "type": "section",
