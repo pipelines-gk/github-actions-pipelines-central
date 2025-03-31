@@ -30,68 +30,54 @@ jobs:
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
-          ESCAPED=$(jq -n --arg msg "$MESSAGE" '$msg')
-          echo "message=$ESCAPED" >> $GITHUB_OUTPUT
+          # Replace newlines with spaces and escape special characters
+          CLEAN_MESSAGE=$(echo "$MESSAGE" | tr '\n' ' ' | sed 's/"/\\"/g')
+          echo "clean_message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
 
-      - name: Prepare Slack Payload with jq
+      - name: Create valid JSON payload
         id: payload
         run: |
-          EMOJI="${{ steps.vars.outputs.emoji }}"
-          WORKFLOW="${{ github.workflow }}"
-          STATUS="${{ inputs.workflow_status }}"
-          REPO="${{ github.repository }}"
-          COLOR="${{ steps.vars.outputs.color }}"
-          COMMIT_MSG=$(echo '${{ fromJson(steps.commit.outputs.message) }}')
-          BRANCH="${{ github.ref_name }}"
-          SERVER_URL="${{ github.server_url }}"
-          RUN_ID="${{ github.run_id }}"
-          
-          jq -n \
-            --arg emoji "$EMOJI" \
-            --arg workflow "$WORKFLOW" \
-            --arg status "$STATUS" \
-            --arg repo "$REPO" \
-            --arg color "$COLOR" \
-            --arg commit_msg "$COMMIT_MSG" \
-            --arg branch "$BRANCH" \
-            --arg server_url "$SERVER_URL" \
-            --arg run_id "$RUN_ID" \
-            '{
-              "text": $emoji + " Workflow *" + $workflow + "* terminó con estado *" + $status + "* en *" + $repo + "*",
-              "attachments": [
-                {
-                  "color": $color,
-                  "blocks": [
-                    {
-                      "type": "section",
-                      "text": {
-                        "type": "mrkdwn",
-                        "text": "*Commit:* " + $commit_msg + "\n*Branch:* " + $branch
-                      }
-                    },
-                    {
-                      "type": "actions",
-                      "elements": [
-                        {
-                          "type": "button",
-                          "text": {
-                            "type": "plain_text",
-                            "text": "Ver en GitHub"
-                          },
-                          "url": $server_url + "/" + $repo + "/actions/runs/" + $run_id
-                        }
-                      ]
+          # Generate a valid JSON payload with all properly escaped values
+          cat > payload.json << EOF
+          {
+            "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
+            "attachments": [
+              {
+                "color": "${{ steps.vars.outputs.color }}",
+                "blocks": [
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "*Commit:* ${{ steps.commit.outputs.clean_message }}\n*Branch:* ${{ github.ref_name }}"
                     }
-                  ]
-                }
-              ]
-            }' > payload.json
+                  },
+                  {
+                    "type": "actions",
+                    "elements": [
+                      {
+                        "type": "button",
+                        "text": {
+                          "type": "plain_text",
+                          "text": "Ver en GitHub"
+                        },
+                        "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
           
-          cat payload.json
+          # Validate JSON to ensure it's correct
+          jq . payload.json > validated_payload.json
+          cat validated_payload.json
 
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          payload-file-path: "./payload.json"
+          payload-file-path: "./validated_payload.json"
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/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' }}
