@@ -12,39 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Map Slack values
-        id: vars
-        run: |
-          if [ "${{ inputs.workflow_status }}" = "success" ]; then
-            echo "emoji=🚀" >> $GITHUB_OUTPUT
-            echo "color=good" >> $GITHUB_OUTPUT
-          else
-            echo "emoji=❌" >> $GITHUB_OUTPUT
-            echo "color=danger" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Prepare commit message
-        id: commit
-        run: |
-          MESSAGE="${{ github.event.head_commit.message }}"
-          if [ -z "$MESSAGE" ]; then
-            MESSAGE="Manual workflow dispatch"
-          fi
-          # Escape the message for JSON
-          ESCAPED_MESSAGE=$(echo "$MESSAGE" | jq -R .)
-          echo "message=$ESCAPED_MESSAGE" >> $GITHUB_OUTPUT
-
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
-              "text": "${{ steps.vars.outputs.emoji }} *${{ github.workflow }}*",
+              "text": "🚀 Prueba de notificación",
               "attachments": [
                 {
-                  "color": "${{ steps.vars.outputs.color }}",
-                  "text": "*Estado:* ${{ inputs.workflow_status }}\n*Repositorio:* ${{ github.repository }}\n*Commit:* ${{ fromJson(steps.commit.outputs.message) }}\n*Branch:* ${{ github.ref_name }}",
-                  "fallback": "Ver detalles en GitHub: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  "color": "good",
+                  "text": "Esta es una prueba simple"
                 }
               ]
             }
