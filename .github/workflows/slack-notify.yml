@@ -33,39 +33,46 @@ jobs:
           ESCAPED=$(jq -n --arg msg "$MESSAGE" '$msg')
           echo "message=$ESCAPED" >> $GITHUB_OUTPUT
 
+      - name: Prepare Slack Payload
+        id: payload
+        run: |
+          cat << EOF > payload.json
+          {
+            "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
+            "attachments": [
+              {
+                "color": "${{ steps.vars.outputs.color }}",
+                "blocks": [
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "*Commit:* ${{ fromJson(steps.commit.outputs.message) }}\n*Branch:* ${{ github.ref_name }}"
+                    }
+                  },
+                  {
+                    "type": "actions",
+                    "elements": [
+                      {
+                        "type": "button",
+                        "text": {
+                          "type": "plain_text",
+                          "text": "Ver en GitHub"
+                        },
+                        "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          cat payload.json
+
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          payload: |
-            {
-              "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
-              "attachments": [
-                {
-                  "color": "${{ steps.vars.outputs.color }}",
-                  "blocks": [
-                    {
-                      "type": "section",
-                      "text": {
-                        "type": "mrkdwn",
-                        "text": "*Commit:* ${{ fromJson(steps.commit.outputs.message) }}\n*Branch:* ${{ github.ref_name }}"
-                      }
-                    },
-                    {
-                      "type": "actions",
-                      "elements": [
-                        {
-                          "type": "button",
-                          "text": {
-                            "type": "plain_text",
-                            "text": "Ver en GitHub"
-                          },
-                          "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
+          payload-file-path: "./payload.json"
         env:
           SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/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"
