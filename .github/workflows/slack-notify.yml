@@ -33,41 +33,60 @@ jobs:
           ESCAPED=$(jq -n --arg msg "$MESSAGE" '$msg')
           echo "message=$ESCAPED" >> $GITHUB_OUTPUT
 
-      - name: Prepare Slack Payload
+      - name: Prepare Slack Payload with jq
         id: payload
         run: |
-          cat << EOF > payload.json
-          {
-            "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
-            "attachments": [
-              {
-                "color": "${{ steps.vars.outputs.color }}",
-                "blocks": [
-                  {
-                    "type": "section",
-                    "text": {
-                      "type": "mrkdwn",
-                      "text": "*Commit:* ${{ fromJson(steps.commit.outputs.message) }}\n*Branch:* ${{ github.ref_name }}"
-                    }
-                  },
-                  {
-                    "type": "actions",
-                    "elements": [
-                      {
-                        "type": "button",
-                        "text": {
-                          "type": "plain_text",
-                          "text": "Ver en GitHub"
-                        },
-                        "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          EMOJI="${{ steps.vars.outputs.emoji }}"
+          WORKFLOW="${{ github.workflow }}"
+          STATUS="${{ inputs.workflow_status }}"
+          REPO="${{ github.repository }}"
+          COLOR="${{ steps.vars.outputs.color }}"
+          COMMIT_MSG=$(echo '${{ fromJson(steps.commit.outputs.message) }}')
+          BRANCH="${{ github.ref_name }}"
+          SERVER_URL="${{ github.server_url }}"
+          RUN_ID="${{ github.run_id }}"
+          
+          jq -n \
+            --arg emoji "$EMOJI" \
+            --arg workflow "$WORKFLOW" \
+            --arg status "$STATUS" \
+            --arg repo "$REPO" \
+            --arg color "$COLOR" \
+            --arg commit_msg "$COMMIT_MSG" \
+            --arg branch "$BRANCH" \
+            --arg server_url "$SERVER_URL" \
+            --arg run_id "$RUN_ID" \
+            '{
+              "text": $emoji + " Workflow *" + $workflow + "* terminó con estado *" + $status + "* en *" + $repo + "*",
+              "attachments": [
+                {
+                  "color": $color,
+                  "blocks": [
+                    {
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": "*Commit:* " + $commit_msg + "\n*Branch:* " + $branch
                       }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-          EOF
+                    },
+                    {
+                      "type": "actions",
+                      "elements": [
+                        {
+                          "type": "button",
+                          "text": {
+                            "type": "plain_text",
+                            "text": "Ver en GitHub"
+                          },
+                          "url": $server_url + "/" + $repo + "/actions/runs/" + $run_id
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }' > payload.json
+          
           cat payload.json
 
       - name: Send Notification to Slack
@@ -75,4 +94,4 @@ jobs:
         with:
           payload-file-path: "./payload.json"
         env:
-          SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/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"
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/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' }}
