@@ -23,61 +23,66 @@ jobs:
             echo "color=danger" >> $GITHUB_OUTPUT
           fi
 
-      - name: Escape commit message
+      - name: Prepare commit message
         id: commit
         run: |
           MESSAGE="${{ github.event.head_commit.message }}"
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
-          # Replace newlines with spaces and escape special characters
-          CLEAN_MESSAGE=$(echo "$MESSAGE" | tr '\n' ' ' | sed 's/"/\\"/g')
-          echo "clean_message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
+          # Escape the message for JSON
+          ESCAPED_MESSAGE=$(echo "$MESSAGE" | jq -R .)
+          echo "message=$ESCAPED_MESSAGE" >> $GITHUB_OUTPUT
 
-      - name: Create valid JSON payload
+      - name: Create Slack payload
         id: payload
         run: |
-          # Generate a valid JSON payload with all properly escaped values
-          cat > payload.json << EOF
-          {
-            "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
-            "attachments": [
-              {
-                "color": "${{ steps.vars.outputs.color }}",
-                "blocks": [
+          # Create the JSON payload using jq
+          jq -n \
+            --arg emoji "${{ steps.vars.outputs.emoji }}" \
+            --arg workflow "${{ github.workflow }}" \
+            --arg status "${{ inputs.workflow_status }}" \
+            --arg repo "${{ github.repository }}" \
+            --arg color "${{ steps.vars.outputs.color }}" \
+            --arg commit_msg "${{ fromJson(steps.commit.outputs.message) }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg server_url "${{ github.server_url }}" \
+            --arg run_id "${{ github.run_id }}" \
+            '{
+              text: "\($emoji) Workflow *\($workflow)* terminó con estado *\($status)* en *\($repo)*",
+              attachments: [{
+                color: $color,
+                blocks: [
                   {
-                    "type": "section",
-                    "text": {
-                      "type": "mrkdwn",
-                      "text": "*Commit:* ${{ steps.commit.outputs.clean_message }}\n*Branch:* ${{ github.ref_name }}"
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: "*Commit:* \($commit_msg)\n*Branch:* \($branch)"
                     }
                   },
                   {
-                    "type": "actions",
-                    "elements": [
+                    type: "actions",
+                    elements: [
                       {
-                        "type": "button",
-                        "text": {
-                          "type": "plain_text",
-                          "text": "Ver en GitHub"
+                        type: "button",
+                        text: {
+                          type: "plain_text",
+                          text: "Ver en GitHub"
                         },
-                        "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                        url: "\($server_url)/\($repo)/actions/runs/\($run_id)"
                       }
                     ]
                   }
                 ]
-              }
-            ]
-          }
-          EOF
-          
-          # Validate JSON to ensure it's correct
-          jq . payload.json > validated_payload.json
-          cat validated_payload.json
+              }]
+            }' > payload.json
+
+          # Display the payload for debugging
+          cat payload.json
 
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          payload-file-path: "./validated_payload.json"
+          payload-file-path: "./payload.json"
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/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' }}
