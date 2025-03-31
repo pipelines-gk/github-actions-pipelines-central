@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Set Slack Message Variables
+      - name: Map Slack values
         id: vars
         run: |
-          if [[ "${{ inputs.workflow_status }}" == "success" ]]; then
+          if [ "${{ inputs.workflow_status }}" = "success" ]; then
             echo "emoji=🚀" >> $GITHUB_OUTPUT
             echo "color=good" >> $GITHUB_OUTPUT
           else
@@ -26,9 +26,12 @@ jobs:
       - name: Escape commit message
         id: commit
         run: |
-          COMMIT_MESSAGE="${{ github.event.head_commit.message || 'Manual workflow dispatch' }}"
-          COMMIT_MESSAGE_ESCAPED=$(jq -Rn --arg msg "$COMMIT_MESSAGE" '$msg')
-          echo "message=$COMMIT_MESSAGE_ESCAPED" >> $GITHUB_OUTPUT
+          MESSAGE="${{ github.event.head_commit.message }}"
+          if [ -z "$MESSAGE" ]; then
+            MESSAGE="Manual workflow dispatch"
+          fi
+          ESCAPED=$(jq -n --arg msg "$MESSAGE" '$msg')
+          echo "message=$ESCAPED" >> $GITHUB_OUTPUT
 
       - name: Send Notification to Slack
         uses: slackapi/slack-github-action@v1.24.0
@@ -44,7 +47,7 @@ jobs:
                       "type": "section",
                       "text": {
                         "type": "mrkdwn",
-                        "text": "*Commit:* ${{ steps.commit.outputs.message }}\n*Branch:* ${{ github.ref_name }}"
+                        "text": "*Commit:* ${{ fromJson(steps.commit.outputs.message) }}\n*Branch:* ${{ github.ref_name }}"
                       }
                     },
                     {
