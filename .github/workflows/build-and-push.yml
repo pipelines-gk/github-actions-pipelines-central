@@ -76,11 +76,10 @@ jobs:
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
-      - name: Run semantic-release (dry-run)
+      - name: Run semantic-release (real release)
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
-          dry_run: true
           branches: main
           extra_plugins: |
             @semantic-release/commit-analyzer
