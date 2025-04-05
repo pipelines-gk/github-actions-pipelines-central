@@ -81,7 +81,8 @@ jobs:
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GH_TOKEN }}
-          release-type: node
+          release-type:
+          path: .
           skip-github-release: true
           skip-github-pull-request: true
 
