@@ -24,7 +24,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write  # 🔐 Necesario para hacer push de tags
   packages: write
   actions: read
 
@@ -82,7 +82,7 @@ jobs:
       - name: Generate and bump VERSION automatically
         run: |
           git fetch --tags --force
-          LAST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          LAST_TAG=$(git tag --sort=-v:refname | grep '^v' | tail -n 1)
           if [[ -z "$LAST_TAG" ]]; then
             LAST_TAG="v0.0.0"
           fi
@@ -101,6 +101,10 @@ jobs:
 
           echo "✅ New VERSION generated: $NEW_VERSION"
           echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
+
+      - name: Push new tag to GitHub
+        run: |
+          git push origin ${{ env.VERSION }}
 
       - name: Install dependencies
         run: npm ci
