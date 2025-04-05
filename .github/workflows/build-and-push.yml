@@ -76,17 +76,19 @@ jobs:
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
-      - name: Run semantic-release (real release)
+      - name: Run semantic-release to calculate version
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
           branches: main
           extra_plugins: |
+            semantic-release
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
             @semantic-release/github
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          SEMANTIC_RELEASE_PACKAGE: false
           SEMANTIC_RELEASE_CONFIG: |
             {
               "plugins": [
@@ -111,11 +113,11 @@ jobs:
               ]
             }
 
-      - name: Extract version from semantic-release output
+      - name: Extract version
         run: |
           VERSION=$(jq -r '.nextRelease.version' <<< '${{ steps.semantic.outputs.release }}')
           if [ -z "$VERSION" ] || [ "$VERSION" == "null" ]; then
-            echo "❌ No new version could be determined."
+            echo "❌ No version found, skipping build"
             exit 1
           fi
           echo "VERSION=v$VERSION" >> $GITHUB_ENV
@@ -149,10 +151,8 @@ jobs:
         if: success()
         run: |
           echo "🚀 Deployment successful"
-          echo "Image published with tag:"
-          echo "  - ${{ env.VERSION }}"
+          echo "Image published with tag: ${{ env.VERSION }}"
 
       - name: Notify deployment failure
         if: failure()
-        run: |
-          echo "❌ Deployment failed"
+        run: echo "❌ Deployment failed"
