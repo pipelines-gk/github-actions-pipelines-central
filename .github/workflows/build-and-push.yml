@@ -22,6 +22,10 @@ on:
     secrets:
       GH_TOKEN:
         required: true
+    outputs:
+      version:
+        description: "Versión generada por release-please"
+        value: ${{ jobs.build-and-push.outputs.version }}
 
 permissions:
   contents: write
@@ -32,6 +36,8 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      version: ${{ steps.release.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -81,7 +87,7 @@ jobs:
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GH_TOKEN }}
-          release-type:
+          release-type: node
           path: .
           skip-github-release: true
           skip-github-pull-request: true
