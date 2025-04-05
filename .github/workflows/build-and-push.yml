@@ -24,7 +24,7 @@ on:
         required: true
 
 permissions:
-  contents: write  # 🔐 Necesario para hacer push de tags
+  contents: write  # Necesario para git push tags
   packages: write
   actions: read
 
@@ -126,9 +126,9 @@ jobs:
           context: .
           file: ${{ inputs.dockerfile }}
           push: true
+          platforms: linux/amd64
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:${{ env.VERSION }}
-          outputs: type=registry
 
       - name: Notify deployment success
         if: success()
