@@ -24,14 +24,15 @@ on:
         required: true
 
 permissions:
-  contents: read  # Read access to repository content
-  packages: write  # Write access to packages
-  actions: read  # Read access to actions
+  contents: read
+  packages: write
+  actions: read
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,30 +62,32 @@ jobs:
             exit 1
           fi
 
-      - name: Process .env file
+      - name: Process .env file and extract vars
         run: |
           cd ${{ inputs.workdir }}
           cat raw_content.txt | grep -v '^#' > .env
 
+          # Extract credentials from .env
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
           if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
-            echo "❌ DigitalOcean credentials not found in .env"
+            echo "❌ Missing DOCR credentials in .env"
             exit 1
           fi
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
-          VERSION=$(grep "^VERSION=" .env | cut -d'=' -f2)
-          if [ -z "$VERSION" ]; then
-            echo "VERSION variable not found in .env, defaulting to 0.0.0"
-            VERSION="0.0.0"
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - name: Generate VERSION from Git tags
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION_WITH_SHA="${VERSION}+${SHORT_SHA}"
+          echo "✅ Using VERSION=$VERSION_WITH_SHA"
+          echo "VERSION=$VERSION_WITH_SHA" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: npm ci
-        working-directory: ${{ inputs.workdir }}  # 🔹 Se ejecuta en el directorio especificado
+        working-directory: ${{ inputs.workdir }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -111,9 +114,7 @@ jobs:
           file: ${{ inputs.dockerfile }}
           push: true
           tags: |
-            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
-            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
-            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:${{ github.sha }}
+            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:${{ env.VERSION }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
@@ -126,10 +127,8 @@ jobs:
         if: success()
         run: |
           echo "🚀 Deployment successful"
-          echo "Image published with the following tags:"
-          echo "  - latest"
-          echo "  - v${{ env.VERSION }}"
-          echo "  - ${{ github.sha }}"
+          echo "Image published with tag:"
+          echo "  - ${{ env.VERSION }}"
 
       - name: Notify deployment failure
         if: failure()
