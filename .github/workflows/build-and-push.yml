@@ -116,14 +116,6 @@ jobs:
           username: ${{ env.DOCR_USERNAME }}
           password: ${{ env.DOCR_PASSWORD }}
 
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -132,13 +124,7 @@ jobs:
           push: true
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:${{ env.VERSION }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-      - name: Update Docker cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          outputs: type=registry
 
       - name: Notify deployment success
         if: success()
