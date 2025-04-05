@@ -40,9 +40,12 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
 
+      - name: Fetch all tags
+        run: git fetch --tags --force
+
       - name: Change to workdir
         run: cd ${{ inputs.workdir }}
-        if: inputs.workdir  # 🔹 Solo se ejecuta si 'workdir' está definido
+        if: inputs.workdir
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -76,11 +79,28 @@ jobs:
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
-      - name: Generate VERSION from Git tags
+      - name: Generate and bump VERSION automatically
         run: |
-          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "✅ Using VERSION=$VERSION"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          git fetch --tags --force
+          LAST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          if [[ -z "$LAST_TAG" ]]; then
+            LAST_TAG="v0.0.0"
+          fi
+
+          VERSION_PARTS=(${LAST_TAG//./ })
+          MAJOR=${VERSION_PARTS[0]#v}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+
+          NEXT_PATCH=$((PATCH + 1))
+          NEW_VERSION="v$MAJOR.$MINOR.$NEXT_PATCH"
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag $NEW_VERSION
+
+          echo "✅ New VERSION generated: $NEW_VERSION"
+          echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: npm ci
