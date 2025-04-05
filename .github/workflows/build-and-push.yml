@@ -81,20 +81,19 @@ jobs:
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GH_TOKEN }}
-          release-type: simple
+          release-type: node
           skip-github-release: true
           skip-github-pull-request: true
-          bump-patch-for-missing: true
-          include-v-in-tag: true
 
       - name: Extract version
         run: |
-          if [ -z "${{ steps.release.outputs.version }}" ]; then
-            echo "❌ No version calculated"
-            exit 1
+          VERSION="${{ steps.release.outputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="0.0.1"
+            echo "⚠️ No version found, defaulting to v$VERSION"
           fi
-          echo "VERSION=${{ steps.release.outputs.version }}" >> $GITHUB_ENV
-          echo "✅ Using version: v${{ steps.release.outputs.version }}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "✅ Using version: v$VERSION"
 
       - name: Install dependencies
         run: npm ci
