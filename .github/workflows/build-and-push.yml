@@ -128,10 +128,9 @@ jobs:
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ${{ inputs.workdir }}
+          context: .
           file: ${{ inputs.dockerfile }}
           push: true
-          platforms: linux/amd64
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
 
