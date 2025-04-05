@@ -27,7 +27,7 @@ permissions:
   contents: write
   packages: write
   actions: read
-  
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -76,20 +76,21 @@ jobs:
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
-      - name: Run Release Please
+      - name: Run Release Please (version only)
         id: release
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GH_TOKEN }}
           release-type: simple
-          create-release: true
+          skip-github-release: true
+          skip-github-pull-request: true
           bump-patch-for-missing: true
           include-v-in-tag: true
 
       - name: Extract version
         run: |
-          if [ "${{ steps.release.outputs.release_created }}" != "true" ]; then
-            echo "❌ No release created"
+          if [ -z "${{ steps.release.outputs.version }}" ]; then
+            echo "❌ No version calculated"
             exit 1
           fi
           echo "VERSION=${{ steps.release.outputs.version }}" >> $GITHUB_ENV
