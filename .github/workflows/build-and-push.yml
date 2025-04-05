@@ -27,6 +27,7 @@ permissions:
   contents: write
   packages: write
   actions: read
+  pull-requests: write
 
 jobs:
   build-and-push:
@@ -76,52 +77,24 @@ jobs:
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
-      - name: Run semantic-release to calculate version
-        id: semantic
-        uses: cycjimmy/semantic-release-action@v4
+      - name: Run Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
         with:
-          branches: main
-          extra_plugins: |
-            semantic-release
-            @semantic-release/commit-analyzer
-            @semantic-release/release-notes-generator
-            @semantic-release/github
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          SEMANTIC_RELEASE_PACKAGE: false
-          SEMANTIC_RELEASE_CONFIG: |
-            {
-              "plugins": [
-                ["@semantic-release/commit-analyzer", {
-                  "preset": "conventionalcommits",
-                  "releaseRules": [
-                    { "type": "feat", "release": "minor" },
-                    { "type": "fix", "release": "patch" },
-                    { "type": "refactor", "release": "patch" },
-                    { "type": "style", "release": "patch" },
-                    { "type": "test", "release": "patch" },
-                    { "type": "chore", "release": "patch" },
-                    { "release": "patch" }
-                  ]
-                }],
-                "@semantic-release/release-notes-generator",
-                ["@semantic-release/github", {
-                  "failComment": false,
-                  "failTitle": false,
-                  "labels": []
-                }]
-              ]
-            }
+          token: ${{ secrets.GH_TOKEN }}
+          release-type: simple
+          create-release: true
+          bump-patch-for-missing: true
+          include-v-in-tag: true
 
       - name: Extract version
         run: |
-          VERSION=$(jq -r '.nextRelease.version' <<< '${{ steps.semantic.outputs.release }}')
-          if [ -z "$VERSION" ] || [ "$VERSION" == "null" ]; then
-            echo "❌ No version found, skipping build"
+          if [ "${{ steps.release.outputs.release_created }}" != "true" ]; then
+            echo "❌ No release created"
             exit 1
           fi
-          echo "VERSION=v$VERSION" >> $GITHUB_ENV
-          echo "✅ Using version: v$VERSION"
+          echo "VERSION=${{ steps.release.outputs.version }}" >> $GITHUB_ENV
+          echo "✅ Using version: v${{ steps.release.outputs.version }}"
 
       - name: Install dependencies
         run: npm ci
@@ -145,13 +118,13 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:${{ env.VERSION }}
+            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
 
       - name: Notify deployment success
         if: success()
         run: |
           echo "🚀 Deployment successful"
-          echo "Image published with tag: ${{ env.VERSION }}"
+          echo "Image published with tag: v${{ env.VERSION }}"
 
       - name: Notify deployment failure
         if: failure()
