@@ -24,7 +24,7 @@ on:
         required: true
     outputs:
       version:
-        description: "Versión generada por release-please"
+        description: "Versión generada"
         value: ${{ jobs.build-and-push.outputs.version }}
 
 permissions:
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
-      version: ${{ steps.release.outputs.version }}
+      version: ${{ steps.extract_version.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -72,7 +72,6 @@ jobs:
         run: |
           cd ${{ inputs.workdir }}
           cat raw_content.txt | grep -v '^#' > .env
-
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
           if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
@@ -93,14 +92,27 @@ jobs:
           skip-github-pull-request: true
 
       - name: Extract version
+        id: extract_version
         run: |
           VERSION="${{ steps.release.outputs.version }}"
           if [ -z "$VERSION" ]; then
-            VERSION="0.0.1"
-            echo "⚠️ No version found, defaulting to v$VERSION"
+            # Intenta obtener el último tag y bumpear el patch
+            latest=$(git describe --tags --abbrev=0 2>/dev/null)
+            if [ -z "$latest" ]; then
+              VERSION="0.0.1"
+            else
+              # Remueve el prefijo 'v' si existe y separa en componentes
+              ver=${latest#v}
+              IFS='.' read -r major minor patch <<< "$ver"
+              patch=$((patch + 1))
+              VERSION="${major}.${minor}.${patch}"
+            fi
+            echo "⚠️ No version found from release-please, defaulting to v$VERSION"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "✅ Using version: v$VERSION"
+          echo "::set-output name=version::$VERSION"
+        shell: bash
 
       - name: Install dependencies
         run: npm ci
