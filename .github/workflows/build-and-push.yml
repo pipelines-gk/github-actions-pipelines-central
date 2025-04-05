@@ -96,12 +96,11 @@ jobs:
         run: |
           VERSION="${{ steps.release.outputs.version }}"
           if [ -z "$VERSION" ]; then
-            # Intenta obtener el último tag y bumpear el patch
+            # Obtiene el último tag y bump patch
             latest=$(git describe --tags --abbrev=0 2>/dev/null)
             if [ -z "$latest" ]; then
               VERSION="0.0.1"
             else
-              # Remueve el prefijo 'v' si existe y separa en componentes
               ver=${latest#v}
               IFS='.' read -r major minor patch <<< "$ver"
               patch=$((patch + 1))
@@ -131,7 +130,7 @@ jobs:
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ${{ inputs.workdir }}
           file: ${{ inputs.dockerfile }}
           push: true
           platforms: linux/amd64
