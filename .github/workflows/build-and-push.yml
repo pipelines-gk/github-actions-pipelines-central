@@ -40,9 +40,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
 
-      - name: Fetch all tags
-        run: git fetch --tags --force
-
       - name: Change to workdir
         run: cd ${{ inputs.workdir }}
         if: inputs.workdir
@@ -79,33 +76,47 @@ jobs:
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
-      - name: Generate and bump VERSION automatically
+      - name: Run semantic-release (dry-run)
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          dry_run: true
+          branches: main
+          extra_plugins: |
+            @semantic-release/commit-analyzer
+            @semantic-release/release-notes-generator
+            @semantic-release/github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          SEMANTIC_RELEASE_CONFIG: |
+            {
+              "plugins": [
+                ["@semantic-release/commit-analyzer", {
+                  "preset": "conventionalcommits",
+                  "releaseRules": [
+                    { "type": "feat", "release": "minor" },
+                    { "type": "fix", "release": "patch" },
+                    { "type": "refactor", "release": "patch" },
+                    { "type": "style", "release": "patch" },
+                    { "type": "test", "release": "patch" },
+                    { "type": "chore", "release": "patch" },
+                    { "release": "patch" }
+                  ]
+                }],
+                "@semantic-release/release-notes-generator",
+                "@semantic-release/github"
+              ]
+            }
+
+      - name: Extract version from semantic-release output
         run: |
-          git fetch --tags --force
-          LAST_TAG=$(git tag --sort=-v:refname | grep '^v' | tail -n 1)
-          if [[ -z "$LAST_TAG" ]]; then
-            LAST_TAG="v0.0.0"
+          VERSION=$(jq -r '.nextRelease.version' <<< '${{ steps.semantic.outputs.release }}')
+          if [ -z "$VERSION" ] || [ "$VERSION" == "null" ]; then
+            echo "❌ No new version could be determined."
+            exit 1
           fi
-
-          VERSION_PARTS=(${LAST_TAG//./ })
-          MAJOR=${VERSION_PARTS[0]#v}
-          MINOR=${VERSION_PARTS[1]}
-          PATCH=${VERSION_PARTS[2]}
-
-          NEXT_PATCH=$((PATCH + 1))
-          NEW_VERSION="v$MAJOR.$MINOR.$NEXT_PATCH"
-
-          if git rev-parse "$NEW_VERSION" >/dev/null 2>&1; then
-            echo "⚠️ Tag $NEW_VERSION already exists. Skipping creation."
-          else
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git tag $NEW_VERSION
-            git push origin $NEW_VERSION
-          fi
-
-          echo "✅ Using VERSION: $NEW_VERSION"
-          echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "VERSION=v$VERSION" >> $GITHUB_ENV
+          echo "✅ Using version: v$VERSION"
 
       - name: Install dependencies
         run: npm ci
