@@ -67,7 +67,6 @@ jobs:
           cd ${{ inputs.workdir }}
           cat raw_content.txt | grep -v '^#' > .env
 
-          # Extract credentials from .env
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
           if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
@@ -79,11 +78,9 @@ jobs:
 
       - name: Generate VERSION from Git tags
         run: |
-          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          VERSION_WITH_SHA="${VERSION}+${SHORT_SHA}"
-          echo "✅ Using VERSION=$VERSION_WITH_SHA"
-          echo "VERSION=$VERSION_WITH_SHA" >> $GITHUB_ENV
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "✅ Using VERSION=$VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: npm ci
