@@ -128,7 +128,7 @@ jobs:
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ${{ inputs.workdir }}
           file: ${{ inputs.dockerfile }}
           push: true
           platforms: linux/amd64
