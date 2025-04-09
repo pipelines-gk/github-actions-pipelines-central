@@ -155,6 +155,7 @@ jobs:
           push: true
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
+            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
 
       - name: Notify deployment success
         if: success()
