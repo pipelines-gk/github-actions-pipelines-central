@@ -14,6 +14,7 @@ on:
         description: "Directorio donde se ejecutarán los comandos"
         required: false
         type: string
+        default: "."
       dockerfile:
         description: "Archivo Dockerfile a utilizar"
         required: false
@@ -40,21 +41,21 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
 
-      - name: Change to workdir
-        run: cd ${{ inputs.workdir }}
-        if: inputs.workdir
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ inputs.node_version }}
-
-      - name: Download and prepare environment file
+      # ⬇️ Descargar el .env
+      - name: Download environment file
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.project_name }}
+          name: ${{ inputs.project_name }}-env
           path: ${{ inputs.workdir }}
 
+      # ⬇️ Descargar CSR y Key Files
+      - name: Download CSR and Key Files
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.project_name }}-csr
+          path: ${{ inputs.workdir }}/files
+
+      # ⬇️ Verificar que el .env existe
       - name: Verify .env file exists
         run: |
           if [ ! -f "${{ inputs.workdir }}/raw_content.txt" ]; then
@@ -62,6 +63,7 @@ jobs:
             exit 1
           fi
 
+      # ⬇️ Procesar .env y extraer DOCR credentials
       - name: Process .env file and extract vars
         run: |
           cd ${{ inputs.workdir }}
@@ -69,13 +71,34 @@ jobs:
 
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
+
           if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
             echo "❌ Missing DOCR credentials in .env"
             exit 1
           fi
+
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
+      # ⬇️ Preparar carpeta csr_files
+      - name: Prepare CSR files
+        run: |
+          cd ${{ inputs.workdir }}
+          mkdir -p csr_files
+          mv files/* csr_files/
+
+      # ⬇️ Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      # ⬇️ Install dependencies
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ inputs.workdir }}
+
+      # ⬇️ Release Please para versionar automáticamente
       - name: Run Release Please (version only)
         id: release
         uses: googleapis/release-please-action@v4
@@ -86,12 +109,12 @@ jobs:
           skip-github-release: true
           skip-github-pull-request: true
 
+      # ⬇️ Extract version
       - name: Extract version
         id: extract_version
         run: |
           VERSION="${{ steps.release.outputs.version }}"
           if [ -z "$VERSION" ]; then
-            # fallback: bump patch manually
             LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             IFS='.' read -r MAJOR MINOR PATCH <<< "${LAST_TAG#v}"
             PATCH=$((PATCH + 1))
@@ -102,44 +125,35 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "✅ Using version: v$VERSION"
 
+      # ⬇️ Create Git Tag
       - name: Create Git tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Start with the extracted version
           VERSION="${{ steps.extract_version.outputs.version }}"
-          
-          # Keep incrementing the version until we find one that doesn't exist
+
           while git rev-parse "v$VERSION" >/dev/null 2>&1; do
             echo "❌ Tag v$VERSION already exists. Incrementing version..."
-            # Split the current version and increment patch
             IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
             PATCH=$((PATCH + 1))
             VERSION="${MAJOR}.${MINOR}.${PATCH}"
             echo "✅ New version: v$VERSION"
           done
-          
-          # Update environment variables with the final version
+
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          
-          # Create tag with the final version
+
           git tag "v$VERSION"
-          
-          # Push the correct tag
           git push origin "v$VERSION"
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: ${{ inputs.workdir }}
-
+      # ⬇️ Setup Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # ⬇️ Login to DOCR
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
         with:
@@ -147,21 +161,24 @@ jobs:
           username: ${{ env.DOCR_USERNAME }}
           password: ${{ env.DOCR_PASSWORD }}
 
+      # ⬇️ Build and Push Docker image
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ${{ inputs.workdir }}
           file: ${{ inputs.dockerfile }}
           push: true
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
 
+      # ⬇️ Notificar éxito
       - name: Notify deployment success
         if: success()
         run: |
           echo "🚀 Deployment successful"
           echo "Image published with tag: v${{ env.VERSION }}"
 
+      # ⬇️ Notificar fallo
       - name: Notify deployment failure
         if: failure()
         run: echo "❌ Deployment failed"
