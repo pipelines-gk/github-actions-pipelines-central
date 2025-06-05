@@ -41,36 +41,29 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
 
-      # ⬇️ Descargar el .env
-      - name: Download environment file
+      # ⬇️ Descarga los secretos
+      - name: Download secrets
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.project_name }}-env
-          path: ${{ inputs.workdir }}
+          name: ${{ inputs.project_name }}-secrets
+          path: ${{ inputs.workdir }}/secrets
 
-      # ⬇️ Descargar CSR y Key Files
-      - name: Download CSR and Key Files
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.project_name }}-csr
-          path: ${{ inputs.workdir }}/files
-
-      # ⬇️ Verificar que el .env existe
+      # ⬇️ Verifica que el .env existe
       - name: Verify .env file exists
         run: |
-          if [ ! -f "${{ inputs.workdir }}/raw_content.txt" ]; then
+          if [ ! -f "${{ inputs.workdir }}/secrets/.env" ]; then
             echo "❌ Error: .env file not found"
             exit 1
           fi
 
-      # ⬇️ Procesar .env y extraer DOCR credentials
+      # ⬇️ Procesa .env para extraer DOCR_USERNAME y DOCR_PASSWORD
       - name: Process .env file and extract vars
         run: |
-          cd ${{ inputs.workdir }}
-          cat raw_content.txt | grep -v '^#' > .env
+          cd ${{ inputs.workdir }}/secrets
+          cat .env | grep -v '^#' > ../.env  # Pone el .env en la raíz de workdir
 
-          DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
-          DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
+          DOCR_USERNAME=$(grep "^DOCR_USERNAME=" ../.env | cut -d'=' -f2)
+          DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" ../.env | cut -d'=' -f2)
 
           if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
             echo "❌ Missing DOCR credentials in .env"
@@ -79,13 +72,6 @@ jobs:
 
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
-
-      # ⬇️ Preparar carpeta csr_files
-      - name: Prepare CSR files
-        run: |
-          cd ${{ inputs.workdir }}
-          mkdir -p csr_files
-          mv files/* csr_files/
 
       # ⬇️ Setup Node.js
       - name: Setup Node.js
@@ -98,7 +84,7 @@ jobs:
         run: npm ci
         working-directory: ${{ inputs.workdir }}
 
-      # ⬇️ Release Please para versionar automáticamente
+      # ⬇️ Run Release Please (version only)
       - name: Run Release Please (version only)
         id: release
         uses: googleapis/release-please-action@v4
@@ -125,7 +111,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "✅ Using version: v$VERSION"
 
-      # ⬇️ Create Git Tag
+      # ⬇️ Create Git tag
       - name: Create Git tag
         run: |
           git config user.name "github-actions[bot]"
@@ -153,7 +139,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ⬇️ Login to DOCR
+      # ⬇️ Log in to DOCR
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
         with:
@@ -171,14 +157,14 @@ jobs:
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
 
-      # ⬇️ Notificar éxito
+      # ⬇️ Notify deployment success
       - name: Notify deployment success
         if: success()
         run: |
           echo "🚀 Deployment successful"
           echo "Image published with tag: v${{ env.VERSION }}"
 
-      # ⬇️ Notificar fallo
+      # ⬇️ Notify deployment failure
       - name: Notify deployment failure
         if: failure()
         run: echo "❌ Deployment failed"
