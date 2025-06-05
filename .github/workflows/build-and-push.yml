@@ -41,29 +41,37 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
 
-      # ⬇️ Descarga los secretos
-      - name: Download secrets
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Download environment file
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.project_name }}-secrets
-          path: ${{ inputs.workdir }}/secrets
+          name: ${{ inputs.project_name }}-env
+          path: ${{ inputs.workdir }}
 
-      # ⬇️ Verifica que el .env existe
+      - name: Download CSR and Key Files
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.project_name }}-csr
+          path: ${{ inputs.workdir }}/csr_files
+
       - name: Verify .env file exists
         run: |
-          if [ ! -f "${{ inputs.workdir }}/secrets/.env" ]; then
+          if [ ! -f "${{ inputs.workdir }}/raw_content.txt" ]; then
             echo "❌ Error: .env file not found"
             exit 1
           fi
 
-      # ⬇️ Procesa .env para extraer DOCR_USERNAME y DOCR_PASSWORD
       - name: Process .env file and extract vars
         run: |
-          cd ${{ inputs.workdir }}/secrets
-          cat .env | grep -v '^#' > ../.env  # Pone el .env en la raíz de workdir
+          cd ${{ inputs.workdir }}
+          cat raw_content.txt | grep -v '^#' > .env
 
-          DOCR_USERNAME=$(grep "^DOCR_USERNAME=" ../.env | cut -d'=' -f2)
-          DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" ../.env | cut -d'=' -f2)
+          DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
+          DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
 
           if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
             echo "❌ Missing DOCR credentials in .env"
@@ -73,18 +81,6 @@ jobs:
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
           echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
 
-      # ⬇️ Setup Node.js
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ inputs.node_version }}
-
-      # ⬇️ Install dependencies
-      - name: Install dependencies
-        run: npm ci
-        working-directory: ${{ inputs.workdir }}
-
-      # ⬇️ Run Release Please (version only)
       - name: Run Release Please (version only)
         id: release
         uses: googleapis/release-please-action@v4
@@ -95,7 +91,6 @@ jobs:
           skip-github-release: true
           skip-github-pull-request: true
 
-      # ⬇️ Extract version
       - name: Extract version
         id: extract_version
         run: |
@@ -109,16 +104,12 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "✅ Using version: v$VERSION"
 
-      # ⬇️ Create Git tag
       - name: Create Git tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           VERSION="${{ steps.extract_version.outputs.version }}"
-
           while git rev-parse "v$VERSION" >/dev/null 2>&1; do
             echo "❌ Tag v$VERSION already exists. Incrementing version..."
             IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
@@ -126,20 +117,20 @@ jobs:
             VERSION="${MAJOR}.${MINOR}.${PATCH}"
             echo "✅ New version: v$VERSION"
           done
-
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
           git tag "v$VERSION"
           git push origin "v$VERSION"
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      # ⬇️ Setup Docker Buildx
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ inputs.workdir }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ⬇️ Log in to DOCR
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
         with:
@@ -147,24 +138,21 @@ jobs:
           username: ${{ env.DOCR_USERNAME }}
           password: ${{ env.DOCR_PASSWORD }}
 
-      # ⬇️ Build and Push Docker image
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ${{ inputs.workdir }}
+          context: .
           file: ${{ inputs.dockerfile }}
           push: true
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
 
-      # ⬇️ Notify deployment success
       - name: Notify deployment success
         if: success()
         run: |
           echo "🚀 Deployment successful"
           echo "Image published with tag: v${{ env.VERSION }}"
 
-      # ⬇️ Notify deployment failure
       - name: Notify deployment failure
         if: failure()
         run: echo "❌ Deployment failed"
