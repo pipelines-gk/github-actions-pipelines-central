@@ -1,3 +1,77 @@
+# name: Slack Notification Workflow
+
+# on:
+#   workflow_call:
+#     inputs:
+#       workflow_status:
+#         required: true
+#         type: string
+
+# jobs:
+#   notify_slack:
+#     runs-on: ubuntu-latest
+#     if: always()
+#     steps:
+#       - name: Map Slack values
+#         id: vars
+#         run: |
+#           if [ "${{ inputs.workflow_status }}" = "success" ]; then
+#             echo "emoji=🚀" >> $GITHUB_OUTPUT
+#             echo "color=good" >> $GITHUB_OUTPUT
+#           else
+#             echo "emoji=❌" >> $GITHUB_OUTPUT
+#             echo "color=danger" >> $GITHUB_OUTPUT
+#           fi
+
+#       - name: Prepare commit message
+#         id: commit
+#         run: |
+#           MESSAGE="${{ github.event.head_commit.message }}"
+#           if [ -z "$MESSAGE" ]; then
+#             MESSAGE="Manual workflow dispatch"
+#           fi
+#           # Replace newlines with \n and escape special characters
+#           CLEAN_MESSAGE=$(echo "$MESSAGE" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+#           echo "message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
+
+#       - name: Send Notification to Slack
+#         uses: slackapi/slack-github-action@v1.24.0
+#         with:
+#           payload: |
+#             {
+#               "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
+#               "attachments": [
+#                 {
+#                   "color": "${{ steps.vars.outputs.color }}",
+#                   "blocks": [
+#                     {
+#                       "type": "section",
+#                       "text": {
+#                         "type": "mrkdwn",
+#                         "text": "*Commit:* ${{ steps.commit.outputs.message }}\n*Branch:* ${{ github.ref_name }}"
+#                       }
+#                     },
+#                     {
+#                       "type": "actions",
+#                       "elements": [
+#                         {
+#                           "type": "button",
+#                           "text": {
+#                             "type": "plain_text",
+#                             "text": "Ver en GitHub"
+#                           },
+#                           "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+#                         }
+#                       ]
+#                     }
+#                   ]
+#                 }
+#               ]
+#             }
+#         env:
+#           SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/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"
+
+
 name: Slack Notification Workflow
 
 on:
@@ -15,13 +89,8 @@ jobs:
       - name: Map Slack values
         id: vars
         run: |
-          if [ "${{ inputs.workflow_status }}" = "success" ]; then
-            echo "emoji=🚀" >> $GITHUB_OUTPUT
-            echo "color=good" >> $GITHUB_OUTPUT
-          else
-            echo "emoji=❌" >> $GITHUB_OUTPUT
-            echo "color=danger" >> $GITHUB_OUTPUT
-          fi
+          echo "emoji=🚀" >> $GITHUB_OUTPUT
+          echo "color=good" >> $GITHUB_OUTPUT
 
       - name: Prepare commit message
         id: commit
@@ -39,7 +108,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
+              "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *success* en *${{ github.repository }}*",
               "attachments": [
                 {
                   "color": "${{ steps.vars.outputs.color }}",
