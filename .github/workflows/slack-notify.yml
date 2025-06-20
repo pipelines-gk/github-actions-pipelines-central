@@ -11,6 +11,7 @@ jobs:
   notify_slack:
     runs-on: ubuntu-latest
     if: always()
+    continue-on-error: true  # Esto hace que el job nunca marque error
     steps:
       - name: Map Slack values
         id: vars
@@ -30,7 +31,6 @@ jobs:
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
-          # Replace newlines with \n and escape special characters
           CLEAN_MESSAGE=$(echo "$MESSAGE" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
           echo "message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
 
