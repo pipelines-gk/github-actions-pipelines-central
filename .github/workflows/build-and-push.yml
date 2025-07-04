@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: gk-runners
     timeout-minutes: 30
 
     steps:
@@ -128,8 +128,16 @@ jobs:
         run: npm ci
         working-directory: ${{ inputs.workdir }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # ✅ OPTIMIZACIÓN: Docker ya está disponible nativamente
+      # No necesitamos docker/setup-buildx-action porque el runner tiene Docker DinD
+      - name: Verify Docker availability
+        run: |
+          echo "🐳 Docker version:"
+          docker --version
+          echo "🔧 Docker info:"
+          docker info
+          echo "📦 Available space:"
+          df -h
 
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
@@ -138,21 +146,43 @@ jobs:
           username: ${{ env.DOCR_USERNAME }}
           password: ${{ env.DOCR_PASSWORD }}
 
-      - name: Build and Push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ${{ inputs.dockerfile }}
-          push: true
-          tags: |
-            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
+      # ✅ OPTIMIZACIÓN: Usar Docker nativo con mejor performance
+      - name: Build Docker image
+        run: |
+          echo "🏗️ Building Docker image..."
+          docker build \
+            --file ${{ inputs.dockerfile }} \
+            --tag registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }} \
+            --tag registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest \
+            .
+
+      - name: Push Docker image
+        run: |
+          echo "🚀 Pushing Docker image..."
+          docker push registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
+          docker push registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
+
+      - name: Clean up Docker images
+        if: always()
+        run: |
+          echo "🧹 Cleaning up Docker images..."
+          docker system prune -f
+          docker image prune -f
 
       - name: Notify deployment success
         if: success()
         run: |
           echo "🚀 Deployment successful"
           echo "Image published with tag: v${{ env.VERSION }}"
+          echo "🏃 Executed on self-hosted runner: $(hostname)"
+          echo "💾 Resources used:"
+          echo "  - CPU: $(nproc) cores"
+          echo "  - RAM: $(free -h | grep Mem | awk '{print $3 "/" $2}')"
 
       - name: Notify deployment failure
         if: failure()
-        run: echo "❌ Deployment failed"
+        run: |
+          echo "❌ Deployment failed"
+          echo "🏃 Runner: $(hostname)"
+          echo "🐳 Docker status:"
+          docker ps -a || echo "Docker not available" 
