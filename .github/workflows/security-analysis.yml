@@ -5,7 +5,7 @@ on:
     
 jobs:
   codeql:
-    runs-on: ubuntu-latest
+    runs-on: gk-runners
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

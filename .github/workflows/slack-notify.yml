@@ -9,7 +9,7 @@ on:
 
 jobs:
   notify_slack:
-    runs-on: ubuntu-latest
+    runs-on: gk-runners
     if: always()
     continue-on-error: true  # Esto hace que el job nunca marque error
     steps:
