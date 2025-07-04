@@ -1,4 +1,4 @@
-name: Slack Notification Workflow
+name: Notification Workflow (Slack Disabled)
 
 on:
   workflow_call:
@@ -11,6 +11,7 @@ jobs:
   notify_slack:
     runs-on: ubuntu-latest
     if: always()
+    continue-on-error: true  # Esto hace que el job nunca marque error
     steps:
       - name: Map Slack values
         id: vars
@@ -30,43 +31,18 @@ jobs:
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
-          # Replace newlines with \n and escape special characters
           CLEAN_MESSAGE=$(echo "$MESSAGE" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
           echo "message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
 
-      - name: Send Notification to Slack
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          payload: |
-            {
-              "text": "${{ steps.vars.outputs.emoji }} Workflow *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en *${{ github.repository }}*",
-              "attachments": [
-                {
-                  "color": "${{ steps.vars.outputs.color }}",
-                  "blocks": [
-                    {
-                      "type": "section",
-                      "text": {
-                        "type": "mrkdwn",
-                        "text": "*Commit:* ${{ steps.commit.outputs.message }}\n*Branch:* ${{ github.ref_name }}"
-                      }
-                    },
-                    {
-                      "type": "actions",
-                      "elements": [
-                        {
-                          "type": "button",
-                          "text": {
-                            "type": "plain_text",
-                            "text": "Ver en GitHub"
-                          },
-                          "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/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"
+      - name: Log Notification (Slack Disabled)
+        run: |
+          echo "🔔 Notification Log (Slack integration disabled)"
+          echo "================================"
+          echo "${{ steps.vars.outputs.emoji }} Workflow: ${{ github.workflow }}"
+          echo "Status: ${{ inputs.workflow_status }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Commit: ${{ steps.commit.outputs.message }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "GitHub URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "================================"
+          echo "✅ Notification workflow completed successfully (no external dependencies)"
