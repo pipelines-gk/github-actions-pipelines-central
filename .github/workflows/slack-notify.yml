@@ -7,11 +7,15 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: notify-${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   notify_slack:
     runs-on: ubuntu-latest
     if: always()
-    continue-on-error: true  # Esto hace que el job nunca marque error
+    continue-on-error: true
     steps:
       - name: Map Slack values
         id: vars
