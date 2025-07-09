@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: gainkode-enterprise-runners
+    runs-on: gainkode-enterprise-runner_2s
     steps:
       - name: Run Release Please
         uses: googleapis/release-please-action@v4

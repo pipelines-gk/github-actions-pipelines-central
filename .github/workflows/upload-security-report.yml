@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   upload-sarif:
-    runs-on: gainkode-enterprise-runner
+    runs-on: gainkode-enterprise-runner_2
     permissions:
       security-events: write
       contents: read
