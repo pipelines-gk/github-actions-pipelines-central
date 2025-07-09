@@ -104,9 +104,9 @@ jobs:
             echo "   - Runner is at organization level but not accessible"
             echo "   - API permissions issue"
             echo ""
-            echo "🎯 Trying direct runner name approach..."
-            echo "🚀 DECISION: Using SPECIFIC SELF-HOSTED runner (gainkode-enterprise-runner_self_hosted)"
-            echo "runner-type=gainkode-enterprise-runner_self_hosted" >> $GITHUB_OUTPUT
+            echo "🎯 Using labels approach instead of specific runner name..."
+            echo "🚀 DECISION: Using SELF-HOSTED runner with labels [self-hosted, docker, ubuntu, enterprise]"
+            echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
           fi
           
           echo ""
