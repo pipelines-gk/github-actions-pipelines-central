@@ -22,17 +22,87 @@ jobs:
           echo "🔍 Checking runner availability..."
           echo "=================================="
           
-          # Usar GitHub API para verificar runners
-          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+          # Verificar permisos del token
+          echo "🔑 Checking token permissions..."
+          TOKEN_INFO=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/user")
+          
+          if echo "$TOKEN_INFO" | jq -e '.login' > /dev/null; then
+            USER=$(echo "$TOKEN_INFO" | jq -r '.login')
+            echo "✅ Token valid for user: $USER"
+          else
+            echo "❌ Token validation failed"
+            echo "Token response: $TOKEN_INFO"
+          fi
+          
+          echo ""
+          echo "📊 Repository: ${{ github.repository }}"
+          echo "🏢 Organization: ${{ github.repository_owner }}"
+          echo "🎯 Target runner: gainkode-enterprise-runner_self_hosted"
+          echo "🏷️  Expected labels: self-hosted, Linux, X64, docker, ubuntu, enterprise"
+          
+          # Intentar diferentes endpoints de la API
+          echo ""
+          echo "🔗 Trying repository runners endpoint..."
+          REPO_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runners")
           
-          echo "📊 Repository: ${{ github.repository }}"
-          echo "🔗 API Response received"
+          echo "📋 Repository API Response:"
+          echo "$REPO_RESPONSE" | jq '.'
           
-          # Mostrar todos los runners disponibles
+          # Intentar endpoint de organización
           echo ""
-          echo "📋 All available runners:"
-          echo "$RESPONSE" | jq -r '.runners[] | "  - \(.name) (Status: \(.status)) [Labels: \(.labels[].name | join(", "))]"'
+          echo "🔗 Trying organization runners endpoint..."
+          ORG_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/orgs/${{ github.repository_owner }}/actions/runners")
+          
+          echo "📋 Organization API Response:"
+          echo "$ORG_RESPONSE" | jq '.'
+          
+          # Decidir qué respuesta usar
+          if echo "$REPO_RESPONSE" | jq -e '.runners' > /dev/null; then
+            RESPONSE="$REPO_RESPONSE"
+            SOURCE="repository"
+          elif echo "$ORG_RESPONSE" | jq -e '.runners' > /dev/null; then
+            RESPONSE="$ORG_RESPONSE"
+            SOURCE="organization"
+          else
+            echo "❌ No valid runners found in either repository or organization"
+            echo "🚀 DECISION: Using GITHUB RUNNER (ubuntu-latest)"
+            echo "runner-type=ubuntu-latest" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo ""
+          echo "✅ Using $SOURCE runners"
+          
+          # Mostrar todos los runners disponibles con detalles
+          echo ""
+          echo "📋 All available runners with details:"
+          RUNNER_COUNT=$(echo "$RESPONSE" | jq '.runners | length')
+          echo "Total runners found: $RUNNER_COUNT"
+          
+          if [ "$RUNNER_COUNT" -gt 0 ]; then
+            echo "$RESPONSE" | jq -r '.runners[] | "  - \(.name) (Status: \(.status)) [Labels: \(.labels[].name | join(", "))]"'
+            
+            echo ""
+            echo "🔍 Detailed runner information:"
+            echo "$RESPONSE" | jq -r '.runners[] | "Runner: \(.name)" + "\n  Status: \(.status)" + "\n  Labels: \(.labels[].name | join(", "))" + "\n  OS: \(.os)" + "\n  Architecture: \(.architecture)" + "\n---"'
+          else
+            echo "  No runners found"
+          fi
+          
+          # Buscar específicamente nuestro runner
+          echo ""
+          echo "🎯 Looking for specific runner: gainkode-enterprise-runner_self_hosted"
+          TARGET_RUNNER=$(echo "$RESPONSE" | jq -r '.runners[] | select(.name == "gainkode-enterprise-runner_self_hosted")')
+          
+          if [ -n "$TARGET_RUNNER" ] && [ "$TARGET_RUNNER" != "null" ]; then
+            echo "✅ Target runner found!"
+            echo "$TARGET_RUNNER" | jq -r '"  Name: \(.name)" + "\n  Status: \(.status)" + "\n  Labels: \(.labels[].name | join(", "))" + "\n  OS: \(.os)" + "\n  Architecture: \(.architecture)"'
+          else
+            echo "❌ Target runner NOT found"
+          fi
           
           # Verificar si hay runners self-hosted disponibles (online o idle)
           AVAILABLE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select((.status == "online" or .status == "idle") and (.labels[] | .name == "self-hosted")) | .name')
@@ -46,7 +116,8 @@ jobs:
             echo "$AVAILABLE_RUNNERS" | while read -r runner; do
               # Obtener el estado específico de este runner
               RUNNER_STATUS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .status')
-              echo "   🏃 $runner (Status: $RUNNER_STATUS)"
+              RUNNER_LABELS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .labels[].name | join(", ")')
+              echo "   🏃 $runner (Status: $RUNNER_STATUS) [Labels: $RUNNER_LABELS]"
             done
             echo ""
             echo "🚀 DECISION: Using SELF-HOSTED runner"
@@ -61,14 +132,16 @@ jobs:
             if [ -n "$OFFLINE_RUNNERS" ]; then
               echo "⚠️  Self-hosted runner(s) OFFLINE:"
               echo "$OFFLINE_RUNNERS" | while read -r runner; do
-                echo "   🏃 $runner (OFFLINE)"
+                RUNNER_LABELS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .labels[].name | join(", ")')
+                echo "   🏃 $runner (OFFLINE) [Labels: $RUNNER_LABELS]"
               done
             fi
             
             if [ -n "$BUSY_RUNNERS" ]; then
               echo "⏳ Self-hosted runner(s) BUSY:"
               echo "$BUSY_RUNNERS" | while read -r runner; do
-                echo "   🏃 $runner (BUSY)"
+                RUNNER_LABELS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .labels[].name | join(", ")')
+                echo "   🏃 $runner (BUSY) [Labels: $RUNNER_LABELS]"
               done
             fi
             
