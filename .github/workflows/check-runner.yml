@@ -21,6 +21,11 @@ jobs:
         run: |
           echo "🔍 Checking runner availability..."
           echo "=================================="
+          echo "⏰ Timestamp: $(date)"
+          echo "🌐 GitHub Event: ${{ github.event_name }}"
+          echo "📝 Workflow: ${{ github.workflow }}"
+          echo "🏃 Job: ${{ github.job }}"
+          echo "=================================="
           
           # Verificar permisos del token
           echo "🔑 Checking token permissions..."
@@ -40,10 +45,13 @@ jobs:
           echo "🏢 Organization: ${{ github.repository_owner }}"
           echo "🎯 Target runner: gainkode-enterprise-runner_self_hosted"
           echo "🏷️  Expected labels: self-hosted, Linux, X64, docker, ubuntu, enterprise"
+          echo "🔗 Repository URL: https://github.com/${{ github.repository }}"
+          echo "🔗 Organization URL: https://github.com/${{ github.repository_owner }}"
           
           # Intentar diferentes endpoints de la API
           echo ""
           echo "🔗 Trying repository runners endpoint..."
+          echo "URL: https://api.github.com/repos/${{ github.repository }}/actions/runners"
           REPO_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runners")
           
@@ -53,6 +61,7 @@ jobs:
           # Intentar endpoint de organización
           echo ""
           echo "🔗 Trying organization runners endpoint..."
+          echo "URL: https://api.github.com/orgs/${{ github.repository_owner }}/actions/runners"
           ORG_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
             "https://api.github.com/orgs/${{ github.repository_owner }}/actions/runners")
           
@@ -67,6 +76,10 @@ jobs:
           REPO_RUNNERS=$(echo "$REPO_RESPONSE" | jq -r '.runners[]?.name // empty')
           ORG_RUNNERS=$(echo "$ORG_RESPONSE" | jq -r '.runners[]?.name // empty')
           
+          echo "📊 Runner count analysis:"
+          echo "  Repository runners: $(echo "$REPO_RUNNERS" | wc -l)"
+          echo "  Organization runners: $(echo "$ORG_RUNNERS" | wc -l)"
+          
           if [ -n "$REPO_RUNNERS" ] || [ -n "$ORG_RUNNERS" ]; then
             echo "✅ Runners found in API, checking availability..."
             
@@ -74,9 +87,11 @@ jobs:
             if [ -n "$REPO_RUNNERS" ]; then
               RESPONSE="$REPO_RESPONSE"
               SOURCE="repository"
+              echo "📍 Using repository runners"
             else
               RESPONSE="$ORG_RESPONSE"
               SOURCE="organization"
+              echo "📍 Using organization runners"
             fi
             
             # Buscar runners self-hosted disponibles
@@ -87,13 +102,22 @@ jobs:
               echo "$AVAILABLE_RUNNERS" | while read -r runner; do
                 RUNNER_STATUS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .status')
                 RUNNER_LABELS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .labels[].name | join(", ")')
-                echo "   🏃 $runner (Status: $RUNNER_STATUS) [Labels: $RUNNER_LABELS]"
+                RUNNER_OS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .os')
+                RUNNER_ARCH=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .architecture')
+                echo "   🏃 $runner"
+                echo "     Status: $RUNNER_STATUS"
+                echo "     OS: $RUNNER_OS"
+                echo "     Architecture: $RUNNER_ARCH"
+                echo "     Labels: $RUNNER_LABELS"
               done
               echo ""
               echo "🚀 DECISION: Using SELF-HOSTED runner (from API)"
               echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
             else
               echo "❌ No self-hosted runners available in API"
+              echo "🔍 Checking all runners in $SOURCE:"
+              echo "$RESPONSE" | jq -r '.runners[] | "  - \(.name) (Status: \(.status)) [Labels: \(.labels[].name | join(", "))]"'
+              echo ""
               echo "🚀 DECISION: Using GITHUB RUNNER (ubuntu-latest)"
               echo "runner-type=ubuntu-latest" >> $GITHUB_OUTPUT
             fi
@@ -103,6 +127,7 @@ jobs:
             echo "   - Runner is not shared with this repository"
             echo "   - Runner is at organization level but not accessible"
             echo "   - API permissions issue"
+            echo "   - Runner is offline or not registered"
             echo ""
             echo "🎯 Using labels approach instead of specific runner name..."
             echo "🚀 DECISION: Using SELF-HOSTED runner with label 'self-hosted'"
@@ -114,4 +139,12 @@ jobs:
           echo ""
           echo "=================================="
           echo "🎯 FINAL CHOICE: $FINAL_CHOICE"
+          echo "=================================="
+          echo "📋 Summary:"
+          echo "  - Repository: ${{ github.repository }}"
+          echo "  - Organization: ${{ github.repository_owner }}"
+          echo "  - Target runner: gainkode-enterprise-runner_self_hosted"
+          echo "  - API runners found: $([ -n "$REPO_RUNNERS$ORG_RUNNERS" ] && echo "Yes" || echo "No")"
+          echo "  - Final decision: $FINAL_CHOICE"
+          echo "  - Next step: Job will use '$FINAL_CHOICE' runner"
           echo "==================================" 
