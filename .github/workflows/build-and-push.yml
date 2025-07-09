@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   build-and-push:
-    runs-on: gk-runner
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:

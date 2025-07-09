@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   upload-sarif:
-    runs-on: gk-runner
+    runs-on: ubuntu-latest
     permissions:
       security-events: write
       contents: read
