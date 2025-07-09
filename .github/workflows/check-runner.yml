@@ -59,98 +59,54 @@ jobs:
           echo "📋 Organization API Response:"
           echo "$ORG_RESPONSE" | jq '.'
           
-          # Decidir qué respuesta usar
-          if echo "$REPO_RESPONSE" | jq -e '.runners' > /dev/null; then
-            RESPONSE="$REPO_RESPONSE"
-            SOURCE="repository"
-          elif echo "$ORG_RESPONSE" | jq -e '.runners' > /dev/null; then
-            RESPONSE="$ORG_RESPONSE"
-            SOURCE="organization"
-          else
-            echo "❌ No valid runners found in either repository or organization"
-            echo "🚀 DECISION: Using GITHUB RUNNER (ubuntu-latest)"
-            echo "runner-type=ubuntu-latest" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          echo ""
-          echo "✅ Using $SOURCE runners"
-          
-          # Mostrar todos los runners disponibles con detalles
-          echo ""
-          echo "📋 All available runners with details:"
-          RUNNER_COUNT=$(echo "$RESPONSE" | jq '.runners | length')
-          echo "Total runners found: $RUNNER_COUNT"
-          
-          if [ "$RUNNER_COUNT" -gt 0 ]; then
-            echo "$RESPONSE" | jq -r '.runners[] | "  - \(.name) (Status: \(.status)) [Labels: \(.labels[].name | join(", "))]"'
-            
-            echo ""
-            echo "🔍 Detailed runner information:"
-            echo "$RESPONSE" | jq -r '.runners[] | "Runner: \(.name)" + "\n  Status: \(.status)" + "\n  Labels: \(.labels[].name | join(", "))" + "\n  OS: \(.os)" + "\n  Architecture: \(.architecture)" + "\n---"'
-          else
-            echo "  No runners found"
-          fi
-          
-          # Buscar específicamente nuestro runner
-          echo ""
-          echo "🎯 Looking for specific runner: gainkode-enterprise-runner_self_hosted"
-          TARGET_RUNNER=$(echo "$RESPONSE" | jq -r '.runners[] | select(.name == "gainkode-enterprise-runner_self_hosted")')
-          
-          if [ -n "$TARGET_RUNNER" ] && [ "$TARGET_RUNNER" != "null" ]; then
-            echo "✅ Target runner found!"
-            echo "$TARGET_RUNNER" | jq -r '"  Name: \(.name)" + "\n  Status: \(.status)" + "\n  Labels: \(.labels[].name | join(", "))" + "\n  OS: \(.os)" + "\n  Architecture: \(.architecture)"'
-          else
-            echo "❌ Target runner NOT found"
-          fi
-          
-          # Verificar si hay runners self-hosted disponibles (online o idle)
-          AVAILABLE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select((.status == "online" or .status == "idle") and (.labels[] | .name == "self-hosted")) | .name')
-          
           echo ""
           echo "🎯 Decision process:"
           echo "==================="
           
-          if [ -n "$AVAILABLE_RUNNERS" ]; then
-            echo "✅ Self-hosted runner(s) AVAILABLE found (online or idle):"
-            echo "$AVAILABLE_RUNNERS" | while read -r runner; do
-              # Obtener el estado específico de este runner
-              RUNNER_STATUS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .status')
-              RUNNER_LABELS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .labels[].name | join(", ")')
-              echo "   🏃 $runner (Status: $RUNNER_STATUS) [Labels: $RUNNER_LABELS]"
-            done
-            echo ""
-            echo "🚀 DECISION: Using SELF-HOSTED runner"
-            echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
+          # Verificar si hay runners en la API
+          REPO_RUNNERS=$(echo "$REPO_RESPONSE" | jq -r '.runners[]?.name // empty')
+          ORG_RUNNERS=$(echo "$ORG_RESPONSE" | jq -r '.runners[]?.name // empty')
+          
+          if [ -n "$REPO_RUNNERS" ] || [ -n "$ORG_RUNNERS" ]; then
+            echo "✅ Runners found in API, checking availability..."
+            
+            # Usar la respuesta que tenga runners
+            if [ -n "$REPO_RUNNERS" ]; then
+              RESPONSE="$REPO_RESPONSE"
+              SOURCE="repository"
+            else
+              RESPONSE="$ORG_RESPONSE"
+              SOURCE="organization"
+            fi
+            
+            # Buscar runners self-hosted disponibles
+            AVAILABLE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select((.status == "online" or .status == "idle") and (.labels[] | .name == "self-hosted")) | .name')
+            
+            if [ -n "$AVAILABLE_RUNNERS" ]; then
+              echo "✅ Self-hosted runner(s) AVAILABLE found in API:"
+              echo "$AVAILABLE_RUNNERS" | while read -r runner; do
+                RUNNER_STATUS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .status')
+                RUNNER_LABELS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .labels[].name | join(", ")')
+                echo "   🏃 $runner (Status: $RUNNER_STATUS) [Labels: $RUNNER_LABELS]"
+              done
+              echo ""
+              echo "🚀 DECISION: Using SELF-HOSTED runner (from API)"
+              echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
+            else
+              echo "❌ No self-hosted runners available in API"
+              echo "🚀 DECISION: Using GITHUB RUNNER (ubuntu-latest)"
+              echo "runner-type=ubuntu-latest" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "❌ No self-hosted runners AVAILABLE found (online or idle)"
+            echo "⚠️  No runners found in API"
+            echo "🔍 This could mean:"
+            echo "   - Runner is not shared with this repository"
+            echo "   - Runner is at organization level but not accessible"
+            echo "   - API permissions issue"
             echo ""
-            echo "🔍 Checking for other self-hosted runners:"
-            OFFLINE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select(.status == "offline" and (.labels[] | .name == "self-hosted")) | .name')
-            BUSY_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select(.status == "busy" and (.labels[] | .name == "self-hosted")) | .name')
-            
-            if [ -n "$OFFLINE_RUNNERS" ]; then
-              echo "⚠️  Self-hosted runner(s) OFFLINE:"
-              echo "$OFFLINE_RUNNERS" | while read -r runner; do
-                RUNNER_LABELS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .labels[].name | join(", ")')
-                echo "   🏃 $runner (OFFLINE) [Labels: $RUNNER_LABELS]"
-              done
-            fi
-            
-            if [ -n "$BUSY_RUNNERS" ]; then
-              echo "⏳ Self-hosted runner(s) BUSY:"
-              echo "$BUSY_RUNNERS" | while read -r runner; do
-                RUNNER_LABELS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .labels[].name | join(", ")')
-                echo "   🏃 $runner (BUSY) [Labels: $RUNNER_LABELS]"
-              done
-            fi
-            
-            if [ -z "$OFFLINE_RUNNERS" ] && [ -z "$BUSY_RUNNERS" ]; then
-              echo "❌ No self-hosted runners found at all"
-            fi
-            echo ""
-            echo "🚀 DECISION: Using GITHUB RUNNER (ubuntu-latest)"
-            echo "runner-type=ubuntu-latest" >> $GITHUB_OUTPUT
+            echo "🎯 Trying direct runner name approach..."
+            echo "🚀 DECISION: Using SPECIFIC SELF-HOSTED runner (gainkode-enterprise-runner_self_hosted)"
+            echo "runner-type=gainkode-enterprise-runner_self_hosted" >> $GITHUB_OUTPUT
           fi
           
           echo ""
