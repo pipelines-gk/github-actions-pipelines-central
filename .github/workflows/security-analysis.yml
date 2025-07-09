@@ -5,7 +5,7 @@ on:
     
 jobs:
   codeql:
-    runs-on: [self-hosted, docker, ubuntu, enterprise]
+    runs-on: [gainkode-enterprise-runner_self_hosted, ubuntu-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
