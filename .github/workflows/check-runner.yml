@@ -105,7 +105,7 @@ jobs:
             echo "   - API permissions issue"
             echo ""
             echo "🎯 Using labels approach instead of specific runner name..."
-            echo "🚀 DECISION: Using SELF-HOSTED runner with labels [self-hosted, Linux, X64, docker, ubuntu, enterprise]"
+            echo "🚀 DECISION: Using SELF-HOSTED runner with label 'self-hosted'"
             echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
           fi
           
