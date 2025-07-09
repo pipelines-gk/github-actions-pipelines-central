@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: gainkode-enterprise-runner_self_hosteds
+    runs-on: ubuntu-latests
     steps:
       - name: Run Release Please
         uses: googleapis/release-please-action@v4
