@@ -109,7 +109,9 @@ jobs:
             echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
           fi
           
+          # Mostrar el valor final que se estableció
+          FINAL_CHOICE=$(cat $GITHUB_OUTPUT | grep "runner-type=" | cut -d'=' -f2)
           echo ""
           echo "=================================="
-          echo "🎯 FINAL CHOICE: ${{ steps.check.outputs.runner-type }}"
+          echo "🎯 FINAL CHOICE: $FINAL_CHOICE"
           echo "==================================" 
