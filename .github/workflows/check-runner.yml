@@ -20,18 +20,54 @@ jobs:
         id: check
         run: |
           echo "🔍 Checking runner availability..."
+          echo "=================================="
           
           # Usar GitHub API para verificar runners
           RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runners")
           
+          echo "📊 Repository: ${{ github.repository }}"
+          echo "🔗 API Response received"
+          
+          # Mostrar todos los runners disponibles
+          echo ""
+          echo "📋 All available runners:"
+          echo "$RESPONSE" | jq -r '.runners[] | "  - \(.name) (Status: \(.status)) [Labels: \(.labels[].name | join(", "))]"'
+          
           # Verificar si hay runners self-hosted online
           ONLINE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select(.status == "online" and (.labels[] | .name == "self-hosted")) | .name')
           
+          echo ""
+          echo "🎯 Decision process:"
+          echo "==================="
+          
           if [ -n "$ONLINE_RUNNERS" ]; then
-            echo "✅ Self-hosted runner available: $ONLINE_RUNNERS"
+            echo "✅ Self-hosted runner(s) ONLINE found:"
+            echo "$ONLINE_RUNNERS" | while read -r runner; do
+              echo "   🏃 $runner"
+            done
+            echo ""
+            echo "🚀 DECISION: Using SELF-HOSTED runner"
             echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ Self-hosted runner offline, using GitHub runner"
+            echo "❌ No self-hosted runners ONLINE found"
+            echo ""
+            echo "🔍 Checking for offline self-hosted runners:"
+            OFFLINE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select(.status == "offline" and (.labels[] | .name == "self-hosted")) | .name')
+            if [ -n "$OFFLINE_RUNNERS" ]; then
+              echo "⚠️  Self-hosted runner(s) OFFLINE:"
+              echo "$OFFLINE_RUNNERS" | while read -r runner; do
+                echo "   🏃 $runner (OFFLINE)"
+              done
+            else
+              echo "❌ No self-hosted runners found at all"
+            fi
+            echo ""
+            echo "🚀 DECISION: Using GITHUB RUNNER (ubuntu-latest)"
             echo "runner-type=ubuntu-latest" >> $GITHUB_OUTPUT
-          fi 
+          fi
+          
+          echo ""
+          echo "=================================="
+          echo "🎯 FINAL CHOICE: ${{ steps.check.outputs.runner-type }}"
+          echo "==================================" 
