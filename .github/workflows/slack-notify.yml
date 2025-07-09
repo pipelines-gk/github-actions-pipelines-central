@@ -13,40 +13,16 @@ concurrency:
 
 jobs:
   notify_slack:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, docker, ubuntu, enterprise]
     if: always()
     continue-on-error: true
     steps:
-      - name: Map Slack values
-        id: vars
+      - name: Simulate Slack notification success
         run: |
-          if [ "${{ inputs.workflow_status }}" = "success" ]; then
-            echo "emoji=🚀" >> $GITHUB_OUTPUT
-            echo "color=good" >> $GITHUB_OUTPUT
-          else
-            echo "emoji=❌" >> $GITHUB_OUTPUT
-            echo "color=danger" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Prepare commit message
-        id: commit
-        run: |
-          MESSAGE="${{ github.event.head_commit.message }}"
-          if [ -z "$MESSAGE" ]; then
-            MESSAGE="Manual workflow dispatch"
-          fi
-          CLEAN_MESSAGE=$(echo "$MESSAGE" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
-          echo "message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
-
-      - name: Log Notification (Slack Disabled)
-        run: |
-          echo "🔔 Notification Log (Slack integration disabled)"
-          echo "================================"
-          echo "${{ steps.vars.outputs.emoji }} Workflow: ${{ github.workflow }}"
+          echo "✅ Slack notification simulated successfully"
+          echo "Workflow: ${{ github.workflow }}"
           echo "Status: ${{ inputs.workflow_status }}"
           echo "Repository: ${{ github.repository }}"
-          echo "Commit: ${{ steps.commit.outputs.message }}"
+          echo "Commit: ${{ github.event.head_commit.message || 'Manual trigger' }}"
           echo "Branch: ${{ github.ref_name }}"
           echo "GitHub URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          echo "================================"
-          echo "✅ Notification workflow completed successfully (no external dependencies)"

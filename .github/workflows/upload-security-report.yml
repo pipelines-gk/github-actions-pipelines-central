@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   upload-sarif:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, docker, ubuntu, enterprise]
     permissions:
       security-events: write
       contents: read
