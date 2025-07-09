@@ -6,17 +6,32 @@ on:
       workflow_status:
         required: true
         type: string
+    secrets:
+      GH_TOKEN:
+        required: true
 
 concurrency:
   group: notify-${{ github.workflow }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
+  check-runner:
+    uses: ./.github/workflows/check-runner.yml
+    secrets:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
   notify_slack:
-    runs-on: [self-hosted, ubuntu-latest]
+    needs: check-runner
+    runs-on: ${{ needs.check-runner.outputs.runner-type }}
     if: always()
     continue-on-error: true
     steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Running on: ${{ needs.check-runner.outputs.runner-type }}"
+          echo "Runner: $(hostname)"
+          echo "OS: $(uname -a)"
+
       - name: Simulate Slack notification success
         run: |
           echo "✅ Slack notification simulated successfully"

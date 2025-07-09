@@ -12,13 +12,25 @@ permissions:
   actions: read 
 
 jobs:
+  check-runner:
+    uses: ./.github/workflows/check-runner.yml
+    secrets:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
   upload-sarif:
-    runs-on: [self-hosted, ubuntu-latest]
+    needs: check-runner
+    runs-on: ${{ needs.check-runner.outputs.runner-type }}
     permissions:
       security-events: write
       contents: read
       actions: read
     steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Running on: ${{ needs.check-runner.outputs.runner-type }}"
+          echo "Runner: $(hostname)"
+          echo "OS: $(uname -a)"
+
       - name: Download SARIF artifact
         uses: actions/download-artifact@v4
         with:

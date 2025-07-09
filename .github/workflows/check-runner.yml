@@ -1,0 +1,37 @@
+name: Check Runner Availability
+
+on:
+  workflow_call:
+    secrets:
+      GH_TOKEN:
+        required: true
+    outputs:
+      runner-type:
+        description: "Type of runner to use (self-hosted or ubuntu-latest)"
+        value: ${{ jobs.check-runner.outputs.runner-type }}
+
+jobs:
+  check-runner:
+    runs-on: ubuntu-latest
+    outputs:
+      runner-type: ${{ steps.check.outputs.runner-type }}
+    steps:
+      - name: Check if self-hosted runner is available
+        id: check
+        run: |
+          echo "🔍 Checking runner availability..."
+          
+          # Usar GitHub API para verificar runners
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runners")
+          
+          # Verificar si hay runners self-hosted online
+          ONLINE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select(.status == "online" and (.labels[] | .name == "self-hosted")) | .name')
+          
+          if [ -n "$ONLINE_RUNNERS" ]; then
+            echo "✅ Self-hosted runner available: $ONLINE_RUNNERS"
+            echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Self-hosted runner offline, using GitHub runner"
+            echo "runner-type=ubuntu-latest" >> $GITHUB_OUTPUT
+          fi 
