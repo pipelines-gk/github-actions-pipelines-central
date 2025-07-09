@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   notify_slack:
-    runs-on: ubuntu-latest
+    runs-on: gainkode-enterprise-runner
     if: always()
     continue-on-error: true
     steps:
