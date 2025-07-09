@@ -34,32 +34,45 @@ jobs:
           echo "📋 All available runners:"
           echo "$RESPONSE" | jq -r '.runners[] | "  - \(.name) (Status: \(.status)) [Labels: \(.labels[].name | join(", "))]"'
           
-          # Verificar si hay runners self-hosted online
-          ONLINE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select(.status == "online" and (.labels[] | .name == "self-hosted")) | .name')
+          # Verificar si hay runners self-hosted disponibles (online o idle)
+          AVAILABLE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select((.status == "online" or .status == "idle") and (.labels[] | .name == "self-hosted")) | .name')
           
           echo ""
           echo "🎯 Decision process:"
           echo "==================="
           
-          if [ -n "$ONLINE_RUNNERS" ]; then
-            echo "✅ Self-hosted runner(s) ONLINE found:"
-            echo "$ONLINE_RUNNERS" | while read -r runner; do
-              echo "   🏃 $runner"
+          if [ -n "$AVAILABLE_RUNNERS" ]; then
+            echo "✅ Self-hosted runner(s) AVAILABLE found (online or idle):"
+            echo "$AVAILABLE_RUNNERS" | while read -r runner; do
+              # Obtener el estado específico de este runner
+              RUNNER_STATUS=$(echo "$RESPONSE" | jq -r --arg name "$runner" '.runners[] | select(.name == $name) | .status')
+              echo "   🏃 $runner (Status: $RUNNER_STATUS)"
             done
             echo ""
             echo "🚀 DECISION: Using SELF-HOSTED runner"
             echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
           else
-            echo "❌ No self-hosted runners ONLINE found"
+            echo "❌ No self-hosted runners AVAILABLE found (online or idle)"
             echo ""
-            echo "🔍 Checking for offline self-hosted runners:"
+            echo "🔍 Checking for other self-hosted runners:"
             OFFLINE_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select(.status == "offline" and (.labels[] | .name == "self-hosted")) | .name')
+            BUSY_RUNNERS=$(echo "$RESPONSE" | jq -r '.runners[] | select(.status == "busy" and (.labels[] | .name == "self-hosted")) | .name')
+            
             if [ -n "$OFFLINE_RUNNERS" ]; then
               echo "⚠️  Self-hosted runner(s) OFFLINE:"
               echo "$OFFLINE_RUNNERS" | while read -r runner; do
                 echo "   🏃 $runner (OFFLINE)"
               done
-            else
+            fi
+            
+            if [ -n "$BUSY_RUNNERS" ]; then
+              echo "⏳ Self-hosted runner(s) BUSY:"
+              echo "$BUSY_RUNNERS" | while read -r runner; do
+                echo "   🏃 $runner (BUSY)"
+              done
+            fi
+            
+            if [ -z "$OFFLINE_RUNNERS" ] && [ -z "$BUSY_RUNNERS" ]; then
               echo "❌ No self-hosted runners found at all"
             fi
             echo ""
