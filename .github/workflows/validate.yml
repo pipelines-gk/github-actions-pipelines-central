@@ -10,7 +10,7 @@ on:
 
 jobs:
   validate:
-    runs-on: gainkode-enterprise-runner_2
+    runs-on: gainkode-enterprise-runner_self_hosted
     steps:
       - uses: actions/checkout@v4
       
