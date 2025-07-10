@@ -30,21 +30,9 @@ permissions:
   actions: read
 
 jobs:
-  check-runner:
-    uses: ./.github/workflows/check-runner.yml
-    secrets:
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
   build-and-push:
-    needs: check-runner
-    runs-on: [self-hosted, docker, ubuntu, enterprise]
+    runs-on: ubuntu-latest
     steps:
-      - name: Show runner info
-        run: |
-          echo "🏃 Running on: ${{ needs.check-runner.outputs.runner-type }}"
-          echo "Runner: $(hostname)"
-          echo "OS: $(uname -a)"
-
       - name: Checkout code
         uses: actions/checkout@v4
         with:

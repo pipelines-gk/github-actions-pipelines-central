@@ -15,21 +15,9 @@ permissions:
   pull-requests: write
 
 jobs:
-  check-runner:
-    uses: ./.github/workflows/check-runner.yml
-    secrets:
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
   release-please:
-    needs: check-runner
-    runs-on: ${{ needs.check-runner.outputs.runner-type }}
+    runs-on: ubuntu-latest
     steps:
-      - name: Show runner info
-        run: |
-          echo "🏃 Running on: ${{ needs.check-runner.outputs.runner-type }}"
-          echo "Runner: $(hostname)"
-          echo "OS: $(uname -a)"
-
       - name: Run Release Please
         uses: googleapis/release-please-action@v4
         with:

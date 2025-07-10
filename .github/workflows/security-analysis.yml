@@ -7,21 +7,9 @@ on:
         required: true
     
 jobs:
-  check-runner:
-    uses: ./.github/workflows/check-runner.yml
-    secrets:
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
   codeql:
-    needs: check-runner
-    runs-on: ${{ needs.check-runner.outputs.runner-type }}
+    runs-on: ubuntu-latest
     steps:
-      - name: Show runner info
-        run: |
-          echo "🏃 Running on: ${{ needs.check-runner.outputs.runner-type }}"
-          echo "Runner: $(hostname)"
-          echo "OS: $(uname -a)"
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
