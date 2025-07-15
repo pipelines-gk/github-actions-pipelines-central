@@ -6,13 +6,6 @@ on:
       workflow_status:
         required: true
         type: string
-    secrets:
-      GH_TOKEN:
-        required: true
-      TELEGRAM_BOT_TOKEN:
-        required: true
-      TELEGRAM_CHAT_ID:
-        required: true
 
 jobs:
   notify_telegram:
