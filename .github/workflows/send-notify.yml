@@ -34,7 +34,7 @@ jobs:
       - name: Send Telegram Notification
         run: |
           TEXT="${{ steps.vars.outputs.emoji }} *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en \`${{ github.repository }}\`%0A*Commit:* ${{ steps.commit.outputs.message }}%0A*Branch:* \`${{ github.ref_name }}\`%0A👉 [Ver en GitHub](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+          curl -s -X POST "https://api.telegram.org/bot7862171298:AAE_UGZmZlqbdjCGmFXub0knHtSDPVdrtrY/sendMessage" \
+            -d chat_id=307567817 \
             -d parse_mode=Markdown \
             -d text="$TEXT"
