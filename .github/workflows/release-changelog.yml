@@ -23,4 +23,4 @@ jobs:
         with:
           token: ${{ secrets.GH_TOKEN }}
           release-type: node
-          path: ${{ inputs.project_name }}
+          path: .
