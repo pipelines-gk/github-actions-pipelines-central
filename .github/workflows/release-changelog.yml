@@ -2,10 +2,6 @@ name: Release Please
 
 on:
   workflow_call:
-    inputs:
-      project_name:
-        required: true
-        type: string
     secrets:
       GH_TOKEN:
         required: true
@@ -22,5 +18,5 @@ jobs:
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GH_TOKEN }}
-          release-type: node
+          release-type: simple
           path: .
