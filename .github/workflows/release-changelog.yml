@@ -12,7 +12,7 @@ on:
 
 permissions:
   contents: write
-  pull-requests: none
+  pull-requests: write
 
 jobs:
   release-please:
@@ -23,3 +23,4 @@ jobs:
         with:
           token: ${{ secrets.GH_TOKEN }}
           release-type: node
+          path: ${{ inputs.project_name }}
