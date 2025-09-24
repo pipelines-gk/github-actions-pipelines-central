@@ -1,0 +1,105 @@
+name: Notify ClickUp Chat (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      workspace_id:
+        description: "ClickUp Workspace ID"
+        type: string
+        required: true
+      channel_id:
+        description: "ClickUp Channel ID"
+        type: string
+        required: true
+      status:
+        description: "Overall pipeline status (success|failure)"
+        type: string
+        required: true
+      title:
+        description: "Title shown in the message"
+        type: string
+        default: "🚀 CI Notification"
+      repo:
+        description: "owner/repo"
+        type: string
+        default: "${{ github.repository }}"
+      branch:
+        description: "Branch name"
+        type: string
+        default: "${{ github.ref_name }}"
+      sha_short:
+        description: "Short commit sha"
+        type: string
+        default: "${{ github.sha }}"
+      run_url:
+        description: "Workflow run URL"
+        type: string
+        default: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      job_onepassword:
+        description: "onepassword job result"
+        type: string
+        default: "skipped"
+      job_build:
+        description: "build job result"
+        type: string
+        default: "skipped"
+      job_release:
+        description: "release job result"
+        type: string
+        default: "skipped"
+      content_format:
+        description: "Message content format"
+        type: string
+        default: "text/md"
+    secrets:
+      CLICKUP_OAUTH_TOKEN:
+        description: "OAuth token for ClickUp v3 Chat"
+        required: true
+
+jobs:
+  notify:
+    name: ClickUp Chat v3 Notify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare payload
+        id: prep
+        shell: bash
+        run: |
+          # Comments in English
+          STATUS="${{ inputs.status }}"
+          TITLE="${{ inputs.title }}"
+          REPO="${{ inputs.repo }}"
+          BRANCH="${{ inputs.branch }}"
+          SHA="${{ inputs.sha_short }}"
+          SHA_SHORT="${SHA:0:7}"
+          RUN_URL="${{ inputs.run_url }}"
+          ONEP="${{ inputs.job_onepassword }}"
+          BUILD="${{ inputs.job_build }}"
+          REL="${{ inputs.job_release }}"
+          TIME="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          FORMAT="${{ inputs.content_format }}"
+
+          cat > body.json <<JSON
+          {
+            "content": "## ${TITLE}\n**Repo:** ${REPO}\n**Branch:** ${BRANCH}\n**Commit:** \`${SHA_SHORT}\`\n**Status:** ${STATUS}\n**Run:** ${RUN_URL}\n\n**Jobs**\n- onepassword: ${ONEP}\n- build: ${BUILD}\n- release: ${REL}\n\n_Time:_ ${TIME}",
+            "content_format": "${FORMAT}"
+          }
+          JSON
+
+          echo "Payload:"
+          cat body.json
+
+      - name: Send to ClickUp Chat (non-blocking)
+        shell: bash
+        env:
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_OAUTH_TOKEN }}
+          WORKSPACE_ID:  ${{ inputs.workspace_id }}
+          CHANNEL_ID:    ${{ inputs.channel_id }}
+        run: |
+          # Comments in English
+          curl -sS -X POST \
+            "https://api.clickup.com/api/v3/workspaces/${WORKSPACE_ID}/chat/channels/${CHANNEL_ID}/messages" \
+            -H "Authorization: Bearer ${CLICKUP_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d @body.json \
+          || echo "WARN: ClickUp Chat notify failed (non-blocking)."
