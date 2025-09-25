@@ -1,105 +1,76 @@
-name: Notify ClickUp Chat (reusable)
+name: ClickUp Chat Notification Workflow
 
 on:
   workflow_call:
     inputs:
-      workspace_id:
-        description: "ClickUp Workspace ID"
-        type: string
+      workflow_status:
         required: true
-      channel_id:
-        description: "ClickUp Channel ID"
         type: string
-        required: true
-      status:
-        description: "Overall pipeline status (success|failure)"
-        type: string
-        required: true
-      title:
-        description: "Title shown in the message"
-        type: string
-        default: "🚀 CI Notification"
-      repo:
-        description: "owner/repo"
-        type: string
-        default: "${{ github.repository }}"
-      branch:
-        description: "Branch name"
-        type: string
-        default: "${{ github.ref_name }}"
-      sha_short:
-        description: "Short commit sha"
-        type: string
-        default: "${{ github.sha }}"
-      run_url:
-        description: "Workflow run URL"
-        type: string
-        default: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-      job_onepassword:
-        description: "onepassword job result"
-        type: string
-        default: "skipped"
-      job_build:
-        description: "build job result"
-        type: string
-        default: "skipped"
-      job_release:
-        description: "release job result"
-        type: string
-        default: "skipped"
-      content_format:
-        description: "Message content format"
-        type: string
-        default: "text/md"
-    secrets:
-      CLICKUP_OAUTH_TOKEN:
-        description: "OAuth token for ClickUp v3 Chat"
-        required: true
 
 jobs:
-  notify:
-    name: ClickUp Chat v3 Notify
+  notify_clickup:
     runs-on: ubuntu-latest
+    if: always()
     steps:
-      - name: Prepare payload
-        id: prep
-        shell: bash
+      - name: Map ClickUp values
+        id: vars
         run: |
-          # Comments in English
-          STATUS="${{ inputs.status }}"
-          TITLE="${{ inputs.title }}"
-          REPO="${{ inputs.repo }}"
-          BRANCH="${{ inputs.branch }}"
-          SHA="${{ inputs.sha_short }}"
-          SHA_SHORT="${SHA:0:7}"
-          RUN_URL="${{ inputs.run_url }}"
-          ONEP="${{ inputs.job_onepassword }}"
-          BUILD="${{ inputs.job_build }}"
-          REL="${{ inputs.job_release }}"
-          TIME="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
-          FORMAT="${{ inputs.content_format }}"
+          if [ "${{ inputs.workflow_status }}" = "success" ]; then
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+            echo "status_text=SUCCESS" >> $GITHUB_OUTPUT
+          else
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+            echo "status_text=FAILED" >> $GITHUB_OUTPUT
+          fi
 
-          cat > body.json <<JSON
+      - name: Prepare commit message
+        id: commit
+        run: |
+          MESSAGE="${{ github.event.head_commit.message }}"
+          if [ -z "$MESSAGE" ]; then
+            MESSAGE="Manual workflow dispatch"
+          fi
+          # Clean message for JSON (escape quotes and newlines)
+          CLEAN_MESSAGE=$(echo "$MESSAGE" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+          echo "message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
+
+      - name: Send ClickUp Chat Notification
+        run: |
+          # ClickUp API configuration (hardcoded for testing)
+          API_KEY="pk_94738230_DDW5KAZV4KKOQVPNO6D4CWNGYMY2FG6U"
+          WORKSPACE_ID="90151289626"
+          CHANNEL_ID="2kypz0ru-10335"
+          
+          # Prepare message content
+          MESSAGE_CONTENT="${{ steps.vars.outputs.emoji }} **${{ github.workflow }}** terminó con estado **${{ steps.vars.outputs.status_text }}** en \`${{ github.repository }}\`
+
+          **Commit:** ${{ steps.commit.outputs.message }}
+          **Branch:** \`${{ github.ref_name }}\`
+          **Run ID:** ${{ github.run_id }}
+          
+          👉 [Ver en GitHub](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          
+          # Create JSON payload
+          JSON_PAYLOAD=$(cat <<EOF
           {
-            "content": "## ${TITLE}\n**Repo:** ${REPO}\n**Branch:** ${BRANCH}\n**Commit:** \`${SHA_SHORT}\`\n**Status:** ${STATUS}\n**Run:** ${RUN_URL}\n\n**Jobs**\n- onepassword: ${ONEP}\n- build: ${BUILD}\n- release: ${REL}\n\n_Time:_ ${TIME}",
-            "content_format": "${FORMAT}"
+            "content": "$MESSAGE_CONTENT",
+            "content_format": "text/md"
           }
-          JSON
-
-          echo "Payload:"
-          cat body.json
-
-      - name: Send to ClickUp Chat (non-blocking)
-        shell: bash
-        env:
-          CLICKUP_TOKEN: ${{ secrets.CLICKUP_OAUTH_TOKEN }}
-          WORKSPACE_ID:  ${{ inputs.workspace_id }}
-          CHANNEL_ID:    ${{ inputs.channel_id }}
-        run: |
-          # Comments in English
-          curl -sS -X POST \
-            "https://api.clickup.com/api/v3/workspaces/${WORKSPACE_ID}/chat/channels/${CHANNEL_ID}/messages" \
-            -H "Authorization: Bearer ${CLICKUP_TOKEN}" \
+          EOF
+          )
+          
+          # Send message to ClickUp
+          curl -X POST \
+            -H "Authorization: $API_KEY" \
             -H "Content-Type: application/json" \
-            -d @body.json \
-          || echo "WARN: ClickUp Chat notify failed (non-blocking)."
+            -d "$JSON_PAYLOAD" \
+            "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages"
+          
+          echo "ClickUp notification sent successfully"
+
+      - name: Log notification details
+        run: |
+          echo "Notification sent with status: ${{ inputs.workflow_status }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
