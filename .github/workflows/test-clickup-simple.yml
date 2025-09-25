@@ -1,0 +1,38 @@
+name: Test ClickUp Simple
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-clickup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test ClickUp API - Simple Message
+        run: |
+          # Exact same config as your PowerShell script
+          API_KEY="pk_94738230_DDW5KAZV4KKOQVPNO6D4CWNGYMY2FG6U"
+          WORKSPACE_ID="90151289626"
+          CHANNEL_ID="2kypz0ru-10335"
+          
+          echo "🧪 Testing ClickUp API with simple message..."
+          
+          # Simple test message (exactly like your PowerShell)
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
+            -H "Authorization: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"content": "**Hotel Nordic – Test message from GitHub Actions**", "content_format": "text/md"}' \
+            "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages")
+          
+          echo "📡 Response:"
+          echo "$RESPONSE"
+          
+          # Check HTTP code
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          echo "HTTP Code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+            echo "✅ Success!"
+          else
+            echo "❌ Failed with HTTP $HTTP_CODE"
+            exit 1
+          fi

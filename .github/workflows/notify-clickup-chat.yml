@@ -36,74 +36,71 @@ jobs:
 
       - name: Send ClickUp Chat Notification
         run: |
-          # ClickUp API configuration (hardcoded for testing)
+          # ClickUp API configuration
           API_KEY="pk_94738230_DDW5KAZV4KKOQVPNO6D4CWNGYMY2FG6U"
           WORKSPACE_ID="90151289626"
           CHANNEL_ID="2kypz0ru-10335"
           
-          echo "🔧 Debug Info:"
-          echo "API_KEY: ${API_KEY:0:15}..."
-          echo "WORKSPACE_ID: $WORKSPACE_ID"
-          echo "CHANNEL_ID: $CHANNEL_ID"
-          echo "Workflow Status: ${{ inputs.workflow_status }}"
-          echo "Emoji: ${{ steps.vars.outputs.emoji }}"
-          echo "Status Text: ${{ steps.vars.outputs.status_text }}"
+          echo "🔧 Testing ClickUp API..."
           
-          # Prepare message content (simplified for testing)
-          MESSAGE_CONTENT="${{ steps.vars.outputs.emoji }} **${{ github.workflow }}** terminó con estado **${{ steps.vars.outputs.status_text }}** en \`${{ github.repository }}\`
-
-**Commit:** ${{ steps.commit.outputs.message }}
-**Branch:** \`${{ github.ref_name }}\`
-**Run ID:** ${{ github.run_id }}
-
-👉 [Ver en GitHub](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          # First, test with a simple message to verify API works
+          echo "🧪 Step 1: Testing simple message..."
+          SIMPLE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
+            -H "Authorization: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"content": "**Test from GitHub Actions**", "content_format": "text/md"}' \
+            "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages")
           
-          echo "📝 Message Content:"
-          echo "$MESSAGE_CONTENT"
-          echo "📝 Message Length: ${#MESSAGE_CONTENT}"
+          echo "Simple test response: $SIMPLE_RESPONSE"
+          SIMPLE_HTTP_CODE=$(echo "$SIMPLE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
           
-          # Install jq for proper JSON handling
-          sudo apt-get update && sudo apt-get install -y jq
+          if [ "$SIMPLE_HTTP_CODE" != "200" ] && [ "$SIMPLE_HTTP_CODE" != "201" ]; then
+            echo "❌ Simple test failed with HTTP $SIMPLE_HTTP_CODE"
+            echo "API credentials or configuration might be wrong"
+            exit 1
+          fi
           
-          # Create JSON payload with proper escaping using jq
-          JSON_PAYLOAD=$(jq -n \
-            --arg content "$MESSAGE_CONTENT" \
-            --arg format "text/md" \
-            '{content: $content, content_format: $format}')
+          echo "✅ Simple test passed! Now sending full notification..."
           
-          echo "📦 JSON Payload:"
-          echo "$JSON_PAYLOAD"
+          # Prepare variables
+          EMOJI="${{ steps.vars.outputs.emoji }}"
+          STATUS_TEXT="${{ steps.vars.outputs.status_text }}"
+          WORKFLOW_NAME="${{ github.workflow }}"
+          REPOSITORY="${{ github.repository }}"
+          COMMIT_MSG="${{ steps.commit.outputs.message }}"
+          BRANCH="${{ github.ref_name }}"
+          RUN_ID="${{ github.run_id }}"
+          GITHUB_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           
-          # Send message to ClickUp with verbose output
-          echo "🚀 Sending to ClickUp..."
+          # Create message content (avoiding complex multiline strings)
+          MESSAGE="$EMOJI **$WORKFLOW_NAME** terminó con estado **$STATUS_TEXT** en \`$REPOSITORY\`\n\n**Commit:** $COMMIT_MSG\n**Branch:** \`$BRANCH\`\n**Run ID:** $RUN_ID\n\n👉 [Ver en GitHub]($GITHUB_URL)"
+          
+          echo "📝 Message to send:"
+          echo "$MESSAGE"
+          
+          # Use printf to create proper JSON (avoiding jq dependency)
+          JSON_DATA=$(printf '{"content": "%s", "content_format": "text/md"}' "$MESSAGE")
+          
+          echo "📦 JSON Data:"
+          echo "$JSON_DATA"
+          
+          # Send the notification
+          echo "🚀 Sending notification..."
           RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
             -H "Authorization: $API_KEY" \
             -H "Content-Type: application/json" \
-            -d "$JSON_PAYLOAD" \
+            -d "$JSON_DATA" \
             "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages")
           
-          echo "📡 ClickUp Response:"
+          echo "📡 Full Response:"
           echo "$RESPONSE"
           
-          # Extract HTTP code
           HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
           
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
             echo "✅ ClickUp notification sent successfully (HTTP $HTTP_CODE)"
           else
             echo "❌ ClickUp notification failed (HTTP $HTTP_CODE)"
-            echo "Full Response: $RESPONSE"
-            
-            # Try a simple test message
-            echo "🔄 Trying simple test message..."
-            SIMPLE_PAYLOAD='{"content": "Test from GitHub Actions", "content_format": "text/md"}'
-            SIMPLE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
-              -H "Authorization: $API_KEY" \
-              -H "Content-Type: application/json" \
-              -d "$SIMPLE_PAYLOAD" \
-              "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages")
-            
-            echo "Simple test response: $SIMPLE_RESPONSE"
             exit 1
           fi
 
