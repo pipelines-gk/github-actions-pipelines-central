@@ -41,32 +41,71 @@ jobs:
           WORKSPACE_ID="90151289626"
           CHANNEL_ID="2kypz0ru-10335"
           
-          # Prepare message content
+          echo "🔧 Debug Info:"
+          echo "API_KEY: ${API_KEY:0:15}..."
+          echo "WORKSPACE_ID: $WORKSPACE_ID"
+          echo "CHANNEL_ID: $CHANNEL_ID"
+          echo "Workflow Status: ${{ inputs.workflow_status }}"
+          echo "Emoji: ${{ steps.vars.outputs.emoji }}"
+          echo "Status Text: ${{ steps.vars.outputs.status_text }}"
+          
+          # Prepare message content (simplified for testing)
           MESSAGE_CONTENT="${{ steps.vars.outputs.emoji }} **${{ github.workflow }}** terminó con estado **${{ steps.vars.outputs.status_text }}** en \`${{ github.repository }}\`
 
-          **Commit:** ${{ steps.commit.outputs.message }}
-          **Branch:** \`${{ github.ref_name }}\`
-          **Run ID:** ${{ github.run_id }}
+**Commit:** ${{ steps.commit.outputs.message }}
+**Branch:** \`${{ github.ref_name }}\`
+**Run ID:** ${{ github.run_id }}
+
+👉 [Ver en GitHub](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           
-          👉 [Ver en GitHub](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          echo "📝 Message Content:"
+          echo "$MESSAGE_CONTENT"
+          echo "📝 Message Length: ${#MESSAGE_CONTENT}"
           
-          # Create JSON payload
-          JSON_PAYLOAD=$(cat <<EOF
-          {
-            "content": "$MESSAGE_CONTENT",
-            "content_format": "text/md"
-          }
-          EOF
-          )
+          # Install jq for proper JSON handling
+          sudo apt-get update && sudo apt-get install -y jq
           
-          # Send message to ClickUp
-          curl -X POST \
+          # Create JSON payload with proper escaping using jq
+          JSON_PAYLOAD=$(jq -n \
+            --arg content "$MESSAGE_CONTENT" \
+            --arg format "text/md" \
+            '{content: $content, content_format: $format}')
+          
+          echo "📦 JSON Payload:"
+          echo "$JSON_PAYLOAD"
+          
+          # Send message to ClickUp with verbose output
+          echo "🚀 Sending to ClickUp..."
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
             -H "Authorization: $API_KEY" \
             -H "Content-Type: application/json" \
             -d "$JSON_PAYLOAD" \
-            "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages"
+            "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages")
           
-          echo "ClickUp notification sent successfully"
+          echo "📡 ClickUp Response:"
+          echo "$RESPONSE"
+          
+          # Extract HTTP code
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+            echo "✅ ClickUp notification sent successfully (HTTP $HTTP_CODE)"
+          else
+            echo "❌ ClickUp notification failed (HTTP $HTTP_CODE)"
+            echo "Full Response: $RESPONSE"
+            
+            # Try a simple test message
+            echo "🔄 Trying simple test message..."
+            SIMPLE_PAYLOAD='{"content": "Test from GitHub Actions", "content_format": "text/md"}'
+            SIMPLE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
+              -H "Authorization: $API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "$SIMPLE_PAYLOAD" \
+              "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages")
+            
+            echo "Simple test response: $SIMPLE_RESPONSE"
+            exit 1
+          fi
 
       - name: Log notification details
         run: |
