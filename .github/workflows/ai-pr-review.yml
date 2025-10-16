@@ -34,3 +34,4 @@ jobs:
           PR_CODE_SUGGESTIONS.NUM_CODE_SUGGESTIONS: "6"
           PR_REVIEWER.SEVERITY_THRESHOLD: medium
           PR_REVIEWER.FOCUS_LANGUAGES: ts,js,html,scss,yaml
+          PR_REVIEWER.FAIL_ON_FINDINGS: "true"
