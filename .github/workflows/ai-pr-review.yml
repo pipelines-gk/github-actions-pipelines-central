@@ -1,0 +1,30 @@
+name: Qodo Merge PR Review (Hosted)
+
+on:
+  workflow_call:
+
+jobs:
+  trigger-qodo:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Add Qodo review comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            🤖 **Qodo Merge Review Triggered**
+
+            El bot de **Qodo Merge** (versión gratuita, 75 PR/mes) revisará este pull request automáticamente.
+
+            Si no arranca en unos segundos, comenta manualmente:
+            ```
+            /review
+            ```
+            o
+            ```
+            /improve
+            ```
+            para pedir revisión o sugerencias.
