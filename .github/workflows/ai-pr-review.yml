@@ -2,13 +2,10 @@ name: AI PR Review (Org-wide)
 
 on:
   workflow_call:
-    secrets:
-      OPENAI_KEY:
-        required: true
 
 jobs:
   pr_agent:
-    # Seguridad: no ejecutar en PRs desde forks externos
+    # No ejecutar en PRs desde forks externos
     if: >
       (github.event_name == 'pull_request' || github.event_name == 'issue_comment') &&
       (github.event.pull_request.head.repo.full_name == github.repository)
@@ -17,6 +14,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,10 +23,9 @@ jobs:
       - name: Run PR-Agent (no App, 100% pipeline)
         uses: qodo-ai/pr-agent@main
         env:
-          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
-          # Modelo (cámbialo si quieres)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # se inyecta solo
+          OPENAI_KEY:   ${{ secrets.OPENAI_KEY }}     # viene del secret global/org/environment
           MODEL: gpt-4o-mini
-          # Ajustes rápidos (opcional)
           GENERAL.AUTO_TRIGGER_TOOLS: review,improve
           PR_REVIEWER.REQUIRE_TESTS_REVIEW: "true"
           PR_CODE_SUGGESTIONS.NUM_CODE_SUGGESTIONS: "6"
