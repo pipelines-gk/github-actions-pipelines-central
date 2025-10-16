@@ -1,30 +1,36 @@
-name: Qodo Merge PR Review (Hosted)
+name: AI PR Review (Org-wide)
 
 on:
   workflow_call:
+    secrets:
+      OPENAI_KEY:
+        required: true
 
 jobs:
-  trigger-qodo:
+  pr_agent:
+    # Seguridad: no ejecutar en PRs desde forks externos
+    if: >
+      (github.event_name == 'pull_request' || github.event_name == 'issue_comment') &&
+      (github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
+      contents: write
       pull-requests: write
       issues: write
     steps:
-      - name: Add Qodo review comment
-        uses: peter-evans/create-or-update-comment@v4
+      - uses: actions/checkout@v4
         with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            🤖 **Qodo Merge Review Triggered**
+          fetch-depth: 1
 
-            El bot de **Qodo Merge** (versión gratuita, 75 PR/mes) revisará este pull request automáticamente.
-
-            Si no arranca en unos segundos, comenta manualmente:
-            ```
-            /review
-            ```
-            o
-            ```
-            /improve
-            ```
-            para pedir revisión o sugerencias.
+      - name: Run PR-Agent (no App, 100% pipeline)
+        uses: qodo-ai/pr-agent@main
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          # Modelo (cámbialo si quieres)
+          MODEL: gpt-4o-mini
+          # Ajustes rápidos (opcional)
+          GENERAL.AUTO_TRIGGER_TOOLS: review,improve
+          PR_REVIEWER.REQUIRE_TESTS_REVIEW: "true"
+          PR_CODE_SUGGESTIONS.NUM_CODE_SUGGESTIONS: "6"
+          PR_REVIEWER.SEVERITY_THRESHOLD: medium
+          PR_REVIEWER.FOCUS_LANGUAGES: ts,js,html,scss,yaml
