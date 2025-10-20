@@ -6,6 +6,18 @@ on:
       workflow_status:
         required: true
         type: string
+      version:
+        required: false
+        type: string
+        default: "N/A"
+      project_name:
+        required: false
+        type: string
+        default: ""
+      build_duration:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   notify_clickup:
@@ -34,34 +46,9 @@ jobs:
           CLEAN_MESSAGE=$(echo "$MESSAGE" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
           echo "message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
 
-      - name: Send ClickUp Chat Notification
+      - name: Build notification message
+        id: message
         run: |
-          # ClickUp API configuration
-          API_KEY="pk_94738230_DDW5KAZV4KKOQVPNO6D4CWNGYMY2FG6U"
-          WORKSPACE_ID="90151289626"
-          CHANNEL_ID="2kypz0ru-10335"
-          
-          echo "🔧 Testing ClickUp API..."
-          
-          # First, test with a simple message to verify API works
-          echo "🧪 Step 1: Testing simple message..."
-          SIMPLE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
-            -H "Authorization: $API_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"content": "**Test from GitHub Actions**", "content_format": "text/md"}' \
-            "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages")
-          
-          echo "Simple test response: $SIMPLE_RESPONSE"
-          SIMPLE_HTTP_CODE=$(echo "$SIMPLE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
-          
-          if [ "$SIMPLE_HTTP_CODE" != "200" ] && [ "$SIMPLE_HTTP_CODE" != "201" ]; then
-            echo "❌ Simple test failed with HTTP $SIMPLE_HTTP_CODE"
-            echo "API credentials or configuration might be wrong"
-            exit 1
-          fi
-          
-          echo "✅ Simple test passed! Now sending full notification..."
-          
           # Prepare variables
           EMOJI="${{ steps.vars.outputs.emoji }}"
           STATUS_TEXT="${{ steps.vars.outputs.status_text }}"
@@ -71,42 +58,62 @@ jobs:
           BRANCH="${{ github.ref_name }}"
           RUN_ID="${{ github.run_id }}"
           GITHUB_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          
-          # Create message content (avoiding complex multiline strings)
-          MESSAGE="$EMOJI **$WORKFLOW_NAME** terminó con estado **$STATUS_TEXT** en \`$REPOSITORY\`\n\n**Commit:** $COMMIT_MSG\n**Branch:** \`$BRANCH\`\n**Run ID:** $RUN_ID\n\n👉 [Ver en GitHub]($GITHUB_URL)"
-          
-          echo "📝 Message to send:"
-          echo "$MESSAGE"
-          
-          # Use printf to create proper JSON (avoiding jq dependency)
-          JSON_DATA=$(printf '{"content": "%s", "content_format": "text/md"}' "$MESSAGE")
-          
-          echo "📦 JSON Data:"
-          echo "$JSON_DATA"
-          
+
+          # Build structured message
+          MESSAGE="$EMOJI **Deployment $STATUS_TEXT**\n\n"
+          MESSAGE+="---\n\n"
+
+          # Project info (if provided)
+          if [ -n "${{ inputs.project_name }}" ]; then
+            MESSAGE+="📦 **Project:** \`${{ inputs.project_name }}\`\n"
+          fi
+
+          # Version info (if provided)
+          if [ "${{ inputs.version }}" != "N/A" ]; then
+            MESSAGE+="🏷️ **Version:** \`${{ inputs.version }}\`\n"
+          fi
+
+          MESSAGE+="\n**Build Information:**\n"
+          MESSAGE+="• 📝 **Commit:** $COMMIT_MSG\n"
+          MESSAGE+="• 🌿 **Branch:** \`$BRANCH\`\n"
+          MESSAGE+="• 📂 **Repository:** \`$REPOSITORY\`\n"
+          MESSAGE+="• 🔢 **Run ID:** \`$RUN_ID\`\n"
+
+          # Duration (if provided)
+          if [ -n "${{ inputs.build_duration }}" ] && [ "${{ inputs.build_duration }}" != "" ]; then
+            MESSAGE+="• ⏱️ **Duration:** ${{ inputs.build_duration }}\n"
+          fi
+
+          MESSAGE+="\n👉 [View full details on GitHub]($GITHUB_URL)"
+
+          # Escape for JSON
+          MESSAGE_JSON=$(echo "$MESSAGE" | sed 's/"/\\"/g')
+          echo "content=$MESSAGE_JSON" >> $GITHUB_OUTPUT
+
+      - name: Send ClickUp Chat Notification
+        env:
+          API_KEY: pk_94738230_DDW5KAZV4KKOQVPNO6D4CWNGYMY2FG6U
+          WORKSPACE_ID: "90151289626"
+          CHANNEL_ID: "2kypz0ru-10335"
+        run: |
+          echo "🚀 Sending ClickUp notification..."
+
+          # Use printf to create proper JSON
+          JSON_DATA=$(printf '{"content": "%s", "content_format": "text/md"}' "${{ steps.message.outputs.content }}")
+
           # Send the notification
-          echo "🚀 Sending notification..."
           RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
             -H "Authorization: $API_KEY" \
             -H "Content-Type: application/json" \
             -d "$JSON_DATA" \
             "https://api.clickup.com/api/v3/workspaces/$WORKSPACE_ID/chat/channels/$CHANNEL_ID/messages")
-          
-          echo "📡 Full Response:"
-          echo "$RESPONSE"
-          
+
           HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
-          
+
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
             echo "✅ ClickUp notification sent successfully (HTTP $HTTP_CODE)"
           else
             echo "❌ ClickUp notification failed (HTTP $HTTP_CODE)"
+            echo "Response: $RESPONSE"
             exit 1
           fi
-
-      - name: Log notification details
-        run: |
-          echo "Notification sent with status: ${{ inputs.workflow_status }}"
-          echo "Repository: ${{ github.repository }}"
-          echo "Workflow: ${{ github.workflow }}"
-          echo "Run ID: ${{ github.run_id }}"

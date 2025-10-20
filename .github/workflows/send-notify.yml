@@ -6,6 +6,18 @@ on:
       workflow_status:
         required: true
         type: string
+      version:
+        required: false
+        type: string
+        default: "N/A"
+      project_name:
+        required: false
+        type: string
+        default: ""
+      build_duration:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   notify_telegram:
@@ -17,8 +29,10 @@ jobs:
         run: |
           if [ "${{ inputs.workflow_status }}" = "success" ]; then
             echo "emoji=✅" >> $GITHUB_OUTPUT
+            echo "status_icon=🚀" >> $GITHUB_OUTPUT
           else
             echo "emoji=❌" >> $GITHUB_OUTPUT
+            echo "status_icon=💥" >> $GITHUB_OUTPUT
           fi
 
       - name: Prepare commit message
@@ -28,13 +42,44 @@ jobs:
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
-          CLEAN_MESSAGE=$(echo "$MESSAGE" | sed ':a;N;$!ba;s/\n/\\n/g')
+          # Get first line only for cleaner display
+          FIRST_LINE=$(echo "$MESSAGE" | head -n 1)
+          CLEAN_MESSAGE=$(echo "$FIRST_LINE" | sed 's/[*_`\[\]]/\\&/g')
           echo "message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
+
+      - name: Calculate build duration
+        id: duration
+        run: |
+          if [ -n "${{ inputs.build_duration }}" ]; then
+            echo "duration=${{ inputs.build_duration }}" >> $GITHUB_OUTPUT
+          else
+            echo "duration=N/A" >> $GITHUB_OUTPUT
+          fi
 
       - name: Send Telegram Notification
         run: |
-          TEXT="${{ steps.vars.outputs.emoji }} *${{ github.workflow }}* terminó con estado *${{ inputs.workflow_status }}* en \`${{ github.repository }}\`%0A*Commit:* ${{ steps.commit.outputs.message }}%0A*Branch:* \`${{ github.ref_name }}\`%0A👉 [Ver en GitHub](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          # Construct structured message
+          HEADER="${{ steps.vars.outputs.emoji }} *Deployment ${{ inputs.workflow_status }}*"
+
+          PROJECT_INFO=""
+          if [ -n "${{ inputs.project_name }}" ]; then
+            PROJECT_INFO="%0A%0A📦 *Project:* \`${{ inputs.project_name }}\`"
+          fi
+
+          VERSION_INFO=""
+          if [ "${{ inputs.version }}" != "N/A" ]; then
+            VERSION_INFO="%0A🏷️ *Version:* \`${{ inputs.version }}\`"
+          fi
+
+          DURATION_INFO=""
+          if [ "${{ steps.duration.outputs.duration }}" != "N/A" ]; then
+            DURATION_INFO="%0A⏱️ *Duration:* ${{ steps.duration.outputs.duration }}"
+          fi
+
+          TEXT="$HEADER$PROJECT_INFO$VERSION_INFO%0A%0A📝 *Commit:* ${{ steps.commit.outputs.message }}%0A🌿 *Branch:* \`${{ github.ref_name }}\`%0A📂 *Repository:* \`${{ github.repository }}\`$DURATION_INFO%0A%0A👉 [Ver detalles completos](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
           curl -s -X POST "https://api.telegram.org/bot7862171298:AAE_UGZmZlqbdjCGmFXub0knHtSDPVdrtrY/sendMessage" \
             -d chat_id=307567817 \
             -d parse_mode=Markdown \
-            -d text="$TEXT"
+            -d text="$TEXT" \
+            -d disable_web_page_preview=true
