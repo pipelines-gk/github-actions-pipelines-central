@@ -198,8 +198,8 @@ jobs:
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
-          cache-from: type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:buildcache
-          cache-to: type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           platforms: linux/amd64
           provenance: false
           sbom: false
