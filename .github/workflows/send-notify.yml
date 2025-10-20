@@ -18,6 +18,26 @@ on:
         required: false
         type: string
         default: ""
+      commit_message:
+        required: false
+        type: string
+        default: ""
+      branch_name:
+        required: false
+        type: string
+        default: ""
+      repository:
+        required: false
+        type: string
+        default: ""
+      run_id:
+        required: false
+        type: string
+        default: ""
+      run_url:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   notify_telegram:
@@ -38,7 +58,10 @@ jobs:
       - name: Prepare commit message
         id: commit
         run: |
-          MESSAGE="${{ github.event.head_commit.message }}"
+          MESSAGE="${{ inputs.commit_message }}"
+          if [ -z "$MESSAGE" ]; then
+            MESSAGE="${{ github.event.head_commit.message }}"
+          fi
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
@@ -55,6 +78,37 @@ jobs:
           else
             echo "duration=N/A" >> $GITHUB_OUTPUT
           fi
+
+      - name: Prepare metadata
+        id: metadata
+        run: |
+          # Branch
+          BRANCH="${{ inputs.branch_name }}"
+          if [ -z "$BRANCH" ]; then
+            BRANCH="${{ github.ref_name }}"
+          fi
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          
+          # Repository
+          REPO="${{ inputs.repository }}"
+          if [ -z "$REPO" ]; then
+            REPO="${{ github.repository }}"
+          fi
+          echo "repository=$REPO" >> $GITHUB_OUTPUT
+          
+          # Run URL
+          RUN_URL="${{ inputs.run_url }}"
+          if [ -z "$RUN_URL" ]; then
+            RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          echo "run_url=$RUN_URL" >> $GITHUB_OUTPUT
+          
+          # Run ID
+          RUN_ID="${{ inputs.run_id }}"
+          if [ -z "$RUN_ID" ]; then
+            RUN_ID="${{ github.run_id }}"
+          fi
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
       - name: Send Telegram Notification
         run: |
@@ -76,7 +130,7 @@ jobs:
             DURATION_INFO="%0A⏱️ *Duration:* ${{ steps.duration.outputs.duration }}"
           fi
 
-          TEXT="$HEADER$PROJECT_INFO$VERSION_INFO%0A%0A📝 *Commit:* ${{ steps.commit.outputs.message }}%0A🌿 *Branch:* \`${{ github.ref_name }}\`%0A📂 *Repository:* \`${{ github.repository }}\`$DURATION_INFO%0A%0A👉 [Ver detalles completos](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          TEXT="$HEADER$PROJECT_INFO$VERSION_INFO%0A%0A📝 *Commit:* ${{ steps.commit.outputs.message }}%0A🌿 *Branch:* \`${{ steps.metadata.outputs.branch }}\`%0A📂 *Repository:* \`${{ steps.metadata.outputs.repository }}\`%0A🔢 *Run ID:* \`${{ steps.metadata.outputs.run_id }}\`$DURATION_INFO%0A%0A👉 [Ver detalles completos](${{ steps.metadata.outputs.run_url }})"
 
           curl -s -X POST "https://api.telegram.org/bot7862171298:AAE_UGZmZlqbdjCGmFXub0knHtSDPVdrtrY/sendMessage" \
             -d chat_id=307567817 \

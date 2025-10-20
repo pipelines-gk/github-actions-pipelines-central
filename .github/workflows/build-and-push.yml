@@ -198,16 +198,12 @@ jobs:
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
-          cache-from: |
-            type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
-            type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
+          cache-from: type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
           cache-to: type=inline
           platforms: linux/amd64
           provenance: false
           sbom: false
           outputs: type=image,push=true,compression=zstd,compression-level=1,oci-mediatypes=true
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
 
       - name: Display Build Summary
         if: success()
