@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: "Dockerfile"
+      enable_cache:
+        description: "Enable Docker layer caching"
+        required: false
+        type: boolean
+        default: true
     secrets:
       GH_TOKEN:
         required: true
@@ -29,9 +34,15 @@ permissions:
   packages: write
   actions: read
 
+# Prevent concurrent builds for the same project
+concurrency:
+  group: build-${{ inputs.project_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,6 +54,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
+          cache: 'npm'
+          cache-dependency-path: '${{ inputs.workdir }}/package-lock.json'
 
       - name: Download environment file
         uses: actions/download-artifact@v4
@@ -107,70 +120,59 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Fetch all remote tags to ensure we have the latest state
-          git fetch --tags origin
-          
+          git config --global advice.detachedHead false
+
           VERSION="${{ steps.extract_version.outputs.version }}"
-          ORIGINAL_VERSION="$VERSION"
-          
-          # Check if tag exists both locally and remotely
+
+          # Optimized: single remote check instead of multiple fetches
+          REMOTE_TAGS=$(git ls-remote --tags origin | awk '{print $2}' | sed 's|refs/tags/||' || echo "")
+
+          # Fast local check
           check_tag_exists() {
             local tag_name="v$1"
-            git rev-parse "$tag_name" >/dev/null 2>&1 || git ls-remote --tags origin "$tag_name" | grep -q "$tag_name"
+            echo "$REMOTE_TAGS" | grep -q "^${tag_name}$"
           }
-          
-          # Find next available version
+
+          # Find next available version (single loop, no repeated fetches)
           while check_tag_exists "$VERSION"; do
-            echo "❌ Tag v$VERSION already exists (locally or remotely). Incrementing version..."
+            echo "⚠️ Tag v$VERSION exists remotely. Auto-incrementing..."
             IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
             PATCH=$((PATCH + 1))
             VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            echo "✅ Trying new version: v$VERSION"
           done
-          
+
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          
-          # Create and push tag with retry mechanism
-          MAX_RETRIES=3
-          RETRY_COUNT=0
-          
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if git tag "v$VERSION" && git push origin "v$VERSION"; then
-              echo "✅ Successfully created and pushed tag v$VERSION"
-              break
+          echo "✅ Using version: v$VERSION"
+
+          # Single atomic operation: create and push
+          if git tag "v$VERSION" && git push --atomic origin "v$VERSION"; then
+            echo "✅ Tag v$VERSION created and pushed"
+          else
+            echo "❌ Failed to create tag. Checking if it was created by concurrent run..."
+            # One final check in case of race condition
+            if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q "v$VERSION"; then
+              echo "⚠️ Tag exists (race condition). Incrementing once more..."
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+              PATCH=$((PATCH + 1))
+              VERSION="${MAJOR}.${MINOR}.${PATCH}"
+              echo "VERSION=$VERSION" >> $GITHUB_ENV
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+              git tag "v$VERSION" && git push origin "v$VERSION" || exit 1
             else
-              echo "❌ Failed to create/push tag v$VERSION. Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
-              git tag -d "v$VERSION" 2>/dev/null || true  # Delete local tag if it exists
-              git fetch --tags origin  # Refresh remote tags
-              
-              # If tag now exists remotely, increment version and try again
-              if check_tag_exists "$VERSION"; then
-                echo "Tag v$VERSION now exists remotely. Incrementing..."
-                IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-                PATCH=$((PATCH + 1))
-                VERSION="${MAJOR}.${MINOR}.${PATCH}"
-                echo "VERSION=$VERSION" >> $GITHUB_ENV
-                echo "version=$VERSION" >> $GITHUB_OUTPUT
-                echo "✅ New version: v$VERSION"
-                RETRY_COUNT=0  # Reset retry count for new version
-              else
-                RETRY_COUNT=$((RETRY_COUNT + 1))
-                sleep 2  # Wait before retry
-              fi
+              exit 1
             fi
-          done
-          
-          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-            echo "❌ Failed to create tag after $MAX_RETRIES attempts"
-            exit 1
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
 
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
@@ -187,6 +189,13 @@ jobs:
           push: true
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
+            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
+          cache-from: type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:buildcache
+          cache-to: type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:buildcache,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+          platforms: linux/amd64
+          provenance: false
 
       - name: Notify deployment success
         if: success()
