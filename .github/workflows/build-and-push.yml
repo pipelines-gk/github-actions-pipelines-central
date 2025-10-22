@@ -63,28 +63,9 @@ jobs:
           name: ${{ inputs.project_name }}-files
           path: ${{ inputs.workdir }}
 
-      - name: Debug - Show downloaded artifact contents
-        run: |
-          echo "📦 Downloaded artifact contents:"
-          ls -laR ${{ inputs.workdir }}
-          
-          echo "🔍 Searching for .env in downloaded files:"
-          find ${{ inputs.workdir }} -name ".env" -type f || echo "No .env found"
-          
-          echo "📁 Contents of csr_files directory:"
-          ls -la ${{ inputs.workdir }}/csr_files/ || echo "csr_files not found"
-
-      - name: Move .env to root if needed
+      - name: Verify .env file exists
         run: |
           WORKDIR="${{ inputs.workdir }}"
-          
-          # Check if .env is in csr_files and move it to root
-          if [ -f "$WORKDIR/csr_files/.env" ]; then
-            echo "✅ Found .env in csr_files/, moving to root"
-            cp "$WORKDIR/csr_files/.env" "$WORKDIR/.env"
-          fi
-          
-          # Verify .env exists in root
           if [ "$WORKDIR" = "." ]; then
             ENV_PATH=".env"
           else
@@ -92,11 +73,9 @@ jobs:
           fi
           
           if [ ! -f "$ENV_PATH" ]; then
-            echo "❌ Error: .env file not found at $ENV_PATH"
-            ls -la "${{ inputs.workdir }}" || true
+            echo "❌ Error: .env file not found"
             exit 1
           fi
-          echo "✅ .env file found at $ENV_PATH"
 
       - name: Process .env file and extract vars
         run: |
