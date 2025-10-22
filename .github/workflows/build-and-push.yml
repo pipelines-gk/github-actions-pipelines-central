@@ -65,14 +65,26 @@ jobs:
 
       - name: Verify .env file exists
         run: |
-          if [ ! -f "${{ inputs.workdir }}/.env" ]; then
-            echo "❌ Error: .env file not found"
+          WORKDIR="${{ inputs.workdir }}"
+          if [ "$WORKDIR" = "." ]; then
+            ENV_PATH=".env"
+          else
+            ENV_PATH="$WORKDIR/.env"
+          fi
+          
+          if [ ! -f "$ENV_PATH" ]; then
+            echo "❌ Error: .env file not found at $ENV_PATH"
+            ls -la "${{ inputs.workdir }}" || true
             exit 1
           fi
+          echo "✅ .env file found at $ENV_PATH"
 
       - name: Process .env file and extract vars
         run: |
-          cd ${{ inputs.workdir }}
+          WORKDIR="${{ inputs.workdir }}"
+          if [ "$WORKDIR" != "." ]; then
+            cd "$WORKDIR"
+          fi
 
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
