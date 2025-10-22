@@ -57,21 +57,15 @@ jobs:
           cache: 'npm'
           cache-dependency-path: '${{ inputs.workdir }}/package-lock.json'
 
-      - name: Download environment file
+      - name: Download files from 1Password
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.project_name }}-env
+          name: ${{ inputs.project_name }}-files
           path: ${{ inputs.workdir }}
-
-      - name: Download CSR and Key Files
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.project_name }}-csr
-          path: ${{ inputs.workdir }}/csr_files
 
       - name: Verify .env file exists
         run: |
-          if [ ! -f "${{ inputs.workdir }}/raw_content.txt" ]; then
+          if [ ! -f "${{ inputs.workdir }}/.env" ]; then
             echo "❌ Error: .env file not found"
             exit 1
           fi
@@ -79,7 +73,6 @@ jobs:
       - name: Process .env file and extract vars
         run: |
           cd ${{ inputs.workdir }}
-          cat raw_content.txt | grep -v '^#' > .env
 
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
