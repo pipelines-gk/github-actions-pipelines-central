@@ -63,6 +63,14 @@ jobs:
           name: ${{ inputs.project_name }}-files
           path: ${{ inputs.workdir }}
 
+      - name: Debug - Show downloaded artifact contents
+        run: |
+          echo "📦 Downloaded artifact contents:"
+          ls -laR ${{ inputs.workdir }}
+          
+          echo "🔍 Searching for .env in downloaded files:"
+          find ${{ inputs.workdir }} -name ".env" -type f || echo "No .env found"
+
       - name: Verify .env file exists
         run: |
           WORKDIR="${{ inputs.workdir }}"
