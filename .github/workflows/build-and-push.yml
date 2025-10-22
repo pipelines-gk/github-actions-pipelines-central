@@ -70,10 +70,21 @@ jobs:
           
           echo "🔍 Searching for .env in downloaded files:"
           find ${{ inputs.workdir }} -name ".env" -type f || echo "No .env found"
+          
+          echo "📁 Contents of csr_files directory:"
+          ls -la ${{ inputs.workdir }}/csr_files/ || echo "csr_files not found"
 
-      - name: Verify .env file exists
+      - name: Move .env to root if needed
         run: |
           WORKDIR="${{ inputs.workdir }}"
+          
+          # Check if .env is in csr_files and move it to root
+          if [ -f "$WORKDIR/csr_files/.env" ]; then
+            echo "✅ Found .env in csr_files/, moving to root"
+            cp "$WORKDIR/csr_files/.env" "$WORKDIR/.env"
+          fi
+          
+          # Verify .env exists in root
           if [ "$WORKDIR" = "." ]; then
             ENV_PATH=".env"
           else
