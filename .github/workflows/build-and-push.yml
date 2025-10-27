@@ -34,7 +34,6 @@ permissions:
   packages: write
   actions: read
 
-# Prevent concurrent builds for the same project - STRICT MODE
 concurrency:
   group: build-${{ inputs.project_name }}-${{ github.ref }}
   cancel-in-progress: true
@@ -43,6 +42,10 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DOCKER_BUILDKIT: "1"
+      BUILDKIT_PROGRESS: plain
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -50,6 +53,7 @@ jobs:
           fetch-depth: 10
           token: ${{ secrets.GH_TOKEN }}
 
+      # Node local cache (no crítico para Docker, puedes quitarlo si quieres)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -57,8 +61,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: '${{ inputs.workdir }}/package-lock.json'
 
-      # ⚡ OPTIMIZACIÓN #5: Cache agresivo de node_modules
-      - name: Cache node_modules
+      - name: Cache node_modules (opcional)
         uses: actions/cache@v4
         id: cache-node-modules
         with:
@@ -79,34 +82,18 @@ jobs:
       - name: Verify .env file exists
         run: |
           WORKDIR="${{ inputs.workdir }}"
-          if [ "$WORKDIR" = "." ]; then
-            ENV_PATH=".env"
-          else
-            ENV_PATH="$WORKDIR/.env"
-          fi
-          
-          if [ ! -f "$ENV_PATH" ]; then
-            echo "❌ Error: .env file not found"
-            exit 1
-          fi
+          ENV_PATH="$WORKDIR/.env"
+          [ "$WORKDIR" = "." ] && ENV_PATH=".env"
+          [ -f "$ENV_PATH" ] || { echo "❌ .env not found"; exit 1; }
 
       - name: Process .env file and extract vars
         run: |
           WORKDIR="${{ inputs.workdir }}"
-          if [ "$WORKDIR" != "." ]; then
-            cd "$WORKDIR"
-          fi
-
+          [ "$WORKDIR" != "." ] && cd "$WORKDIR"
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
-
-          if [ -z "$DOCR_USERNAME" ] || [ -z "$DOCR_PASSWORD" ]; then
-            echo "❌ Missing DOCR credentials in .env"
-            exit 1
-          fi
-
-          echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
-          echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV
+          [ -n "$DOCR_USERNAME" ] && echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV || (echo "❌ Missing DOCR_USERNAME" && exit 1)
+          [ -n "$DOCR_PASSWORD" ] && echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV || (echo "❌ Missing DOCR_PASSWORD" && exit 1)
 
       - name: Run Release Please (version only)
         id: release
@@ -127,7 +114,7 @@ jobs:
             IFS='.' read -r MAJOR MINOR PATCH <<< "${LAST_TAG#v}"
             PATCH=$((PATCH + 1))
             VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            echo "⚠️ No version found, defaulting to bumped version: v$VERSION"
+            echo "⚠️ No version found, defaulting: v$VERSION"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -137,57 +124,28 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config --global advice.detachedHead false
-
           BASE_VERSION="${{ steps.extract_version.outputs.version }}"
           IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
-          
-          echo "📦 Base version from Release Please: v${BASE_VERSION}"
-          
-          # Fetch ALL remote tags in ONE call (super fast)
-          echo "🔍 Fetching all remote tags for v${MAJOR}.${MINOR}.*..."
-          ALL_TAGS=$(git ls-remote --tags origin | awk '{print $2}' | sed 's|refs/tags/||' | grep "^v${MAJOR}\.${MINOR}\." || echo "")
-          
+          ALL_TAGS=$(git ls-remote --tags origin | awk '{print $2}' | sed 's|refs/tags/||' | grep "^v${MAJOR}\.${MINOR}\." || true)
           if [ -z "$ALL_TAGS" ]; then
             FINAL_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            echo "✅ No existing tags found - using base version: v${FINAL_VERSION}"
           else
-            # Find the highest PATCH number efficiently
             MAX_PATCH=$(echo "$ALL_TAGS" | sed "s|^v${MAJOR}\.${MINOR}\.||" | grep -E '^[0-9]+$' | sort -n | tail -1)
-            
-            if [ -z "$MAX_PATCH" ]; then
-              FINAL_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            else
-              FINAL_VERSION="${MAJOR}.${MINOR}.$((MAX_PATCH + 1))"
-              echo "⚡ Found existing tags up to v${MAJOR}.${MINOR}.${MAX_PATCH}"
-              echo "⚡ Auto-incrementing to: v${FINAL_VERSION}"
-            fi
+            [ -z "$MAX_PATCH" ] && MAX_PATCH=$PATCH
+            FINAL_VERSION="${MAJOR}.${MINOR}.$((MAX_PATCH + 1))"
           fi
-          
-          # Try to create tag with single retry on race condition
-          MAX_RETRIES=3
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "🚀 Attempt $i/$MAX_RETRIES: Creating tag v${FINAL_VERSION}"
-            
+          for i in 1 2 3; do
             if git tag "v${FINAL_VERSION}" 2>/dev/null && git push origin "v${FINAL_VERSION}" 2>/dev/null; then
               echo "VERSION=${FINAL_VERSION}" >> $GITHUB_ENV
               echo "version=${FINAL_VERSION}" >> $GITHUB_OUTPUT
-              echo "✅ Tag v${FINAL_VERSION} created successfully"
               exit 0
             fi
-            
-            # Race condition detected - another job created the tag
-            echo "⚠️ Race condition detected on v${FINAL_VERSION}"
             git tag -d "v${FINAL_VERSION}" 2>/dev/null || true
-            
-            # Quick increment for retry
             IFS='.' read -r M N P <<< "${FINAL_VERSION}"
             FINAL_VERSION="${M}.${N}.$((P + 1))"
-            
-            [ $i -lt $MAX_RETRIES ] && sleep 1
+            [ $i -lt 3 ] && sleep 1
           done
-          
-          echo "❌ Failed to create tag after $MAX_RETRIES attempts"
-          exit 1
+          echo "❌ Failed to create tag"; exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -202,9 +160,6 @@ jobs:
           buildkitd-config-inline: |
             [worker.oci]
               max-parallelism = 8
-            [registry."registry.digitalocean.com"]
-              mirrors = ["registry.digitalocean.com"]
-              insecure = false
 
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
@@ -223,10 +178,9 @@ jobs:
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
-          cache-from: |
-            type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
-            type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:buildcache
-          cache-to: type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:buildcache,mode=max
+          # 👉 Usa caché GHA (rápido) en vez de registry buildcache (lento)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           platforms: linux/amd64
           provenance: false
           sbom: false
@@ -242,30 +196,22 @@ jobs:
           DIGEST: ${{ steps.docker_build.outputs.digest }}
         run: |
           echo "## 🚀 Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Project** | \`${PROJECT}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Version** | \`v${VERSION}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Image Digest** | \`${DIGEST}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Registry** | \`registry.digitalocean.com/gainkode/${PROJECT}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Image Tags" >> $GITHUB_STEP_SUMMARY
           echo "- \`registry.digitalocean.com/gainkode/${PROJECT}:v${VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`registry.digitalocean.com/gainkode/${PROJECT}:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ⚡ Build Metadata" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cache Hit**: Check build logs for cache performance" >> $GITHUB_STEP_SUMMARY
-          echo "- **Compression**: zstd level 3" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platform**: linux/amd64" >> $GITHUB_STEP_SUMMARY
-
-          echo "🚀 Deployment successful - Image: v${VERSION}"
+          echo "### ⚡ Build Meta" >> $GITHUB_STEP_SUMMARY
+          echo "- Cache: GHA" >> $GITHUB_STEP_SUMMARY
+          echo "- Compression: zstd level 3" >> $GITHUB_STEP_SUMMARY
+          echo "- Platform: linux/amd64" >> $GITHUB_STEP_SUMMARY
 
       - name: Notify deployment failure
         if: failure()
         run: |
           echo "## ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The Docker build for **${{ inputs.project_name }}** failed." >> $GITHUB_STEP_SUMMARY
-          echo "Please check the logs above for details." >> $GITHUB_STEP_SUMMARY
-          echo "❌ Deployment failed"
+          echo "The Docker build failed." >> $GITHUB_STEP_SUMMARY
