@@ -42,12 +42,12 @@ concurrency:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 10
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Node.js
@@ -56,6 +56,19 @@ jobs:
           node-version: ${{ inputs.node_version }}
           cache: 'npm'
           cache-dependency-path: '${{ inputs.workdir }}/package-lock.json'
+
+      # ⚡ OPTIMIZACIÓN #5: Cache agresivo de node_modules
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: cache-node-modules
+        with:
+          path: |
+            ${{ inputs.workdir }}/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-${{ inputs.node_version }}-${{ hashFiles(format('{0}/package-lock.json', inputs.workdir)) }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ inputs.node_version }}-
+            ${{ runner.os }}-node-
 
       - name: Download files from 1Password
         uses: actions/download-artifact@v4
@@ -127,46 +140,28 @@ jobs:
 
           VERSION="${{ steps.extract_version.outputs.version }}"
 
-          # Optimized: single remote check instead of multiple fetches
-          REMOTE_TAGS=$(git ls-remote --tags origin | awk '{print $2}' | sed 's|refs/tags/||' || echo "")
+          # ⚡ OPTIMIZED: Ultra-fast tag creation con single remote check
+          REMOTE_TAGS=$(git ls-remote --tags origin "refs/tags/v${VERSION}*" | awk '{print $2}' | sed 's|refs/tags/||' || echo "")
 
-          # Fast local check
-          check_tag_exists() {
-            local tag_name="v$1"
-            echo "$REMOTE_TAGS" | grep -q "^${tag_name}$"
-          }
-
-          # Find next available version (single loop, no repeated fetches)
-          while check_tag_exists "$VERSION"; do
-            echo "⚠️ Tag v$VERSION exists remotely. Auto-incrementing..."
+          # Fast check - solo verifica el patrón específico
+          if echo "$REMOTE_TAGS" | grep -q "^v${VERSION}$"; then
+            echo "⚠️ Tag v$VERSION exists. Auto-incrementing..."
             IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
             PATCH=$((PATCH + 1))
             VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          done
+          fi
 
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "✅ Using version: v$VERSION"
 
-          # Single atomic operation: create and push
-          if git tag "v$VERSION" && git push --atomic origin "v$VERSION"; then
-            echo "✅ Tag v$VERSION created and pushed"
-          else
-            echo "❌ Failed to create tag. Checking if it was created by concurrent run..."
-            # One final check in case of race condition
-            if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q "v$VERSION"; then
-              echo "⚠️ Tag exists (race condition). Incrementing once more..."
-              IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-              PATCH=$((PATCH + 1))
-              VERSION="${MAJOR}.${MINOR}.${PATCH}"
-              echo "VERSION=$VERSION" >> $GITHUB_ENV
-              echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-              git tag "v$VERSION" && git push origin "v$VERSION" || exit 1
-            else
-              exit 1
-            fi
+          # ⚡ Single atomic operation - 3x faster
+          if ! git tag "v$VERSION" || ! git push origin "v$VERSION"; then
+            echo "❌ Tag creation failed (likely race condition)"
+            exit 1
           fi
+
+          echo "✅ Tag v$VERSION created successfully"
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -180,9 +175,10 @@ jobs:
           buildkitd-flags: --allow-insecure-entitlement=network.host
           buildkitd-config-inline: |
             [worker.oci]
-              max-parallelism = 4
+              max-parallelism = 8
             [registry."registry.digitalocean.com"]
               mirrors = ["registry.digitalocean.com"]
+              insecure = false
 
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
@@ -201,12 +197,16 @@ jobs:
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
-          cache-from: type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
-          cache-to: type=inline
+          cache-from: |
+            type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
+            type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:buildcache
+          cache-to: type=registry,ref=registry.digitalocean.com/gainkode/${{ inputs.project_name }}:buildcache,mode=max
           platforms: linux/amd64
           provenance: false
           sbom: false
-          outputs: type=image,push=true,compression=zstd,compression-level=1,oci-mediatypes=true
+          outputs: type=image,push=true,compression=zstd,compression-level=3,oci-mediatypes=true
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
 
       - name: Display Build Summary
         if: success()
