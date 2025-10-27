@@ -34,10 +34,10 @@ permissions:
   packages: write
   actions: read
 
-# Prevent concurrent builds for the same project
+# Prevent concurrent builds for the same project - STRICT MODE
 concurrency:
   group: build-${{ inputs.project_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-and-push:
@@ -132,36 +132,55 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Create Git tag
+      - name: Create Git tag with race condition protection
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config --global advice.detachedHead false
 
           VERSION="${{ steps.extract_version.outputs.version }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-          # ⚡ OPTIMIZED: Ultra-fast tag creation con single remote check
-          REMOTE_TAGS=$(git ls-remote --tags origin "refs/tags/v${VERSION}*" | awk '{print $2}' | sed 's|refs/tags/||' || echo "")
+          MAX_ATTEMPTS=10
+          ATTEMPT=1
+          SUCCESS=false
 
-          # Fast check - solo verifica el patrón específico
-          if echo "$REMOTE_TAGS" | grep -q "^v${VERSION}$"; then
-            echo "⚠️ Tag v$VERSION exists. Auto-incrementing..."
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            CANDIDATE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            echo "🔍 Attempt $ATTEMPT/$MAX_ATTEMPTS - Testing version: v$CANDIDATE_VERSION"
+
+            REMOTE_EXISTS=$(git ls-remote --tags origin "refs/tags/v${CANDIDATE_VERSION}" | wc -l)
+
+            if [ "$REMOTE_EXISTS" -eq 0 ]; then
+              echo "✅ Version v$CANDIDATE_VERSION available"
+              
+              if git tag "v$CANDIDATE_VERSION" 2>/dev/null; then
+                if git push origin "v$CANDIDATE_VERSION" 2>/dev/null; then
+                  echo "VERSION=$CANDIDATE_VERSION" >> $GITHUB_ENV
+                  echo "version=$CANDIDATE_VERSION" >> $GITHUB_OUTPUT
+                  echo "✅ Tag v$CANDIDATE_VERSION created successfully"
+                  SUCCESS=true
+                  break
+                else
+                  echo "⚠️ Push failed for v$CANDIDATE_VERSION - another job may have created it"
+                  git tag -d "v$CANDIDATE_VERSION" 2>/dev/null || true
+                fi
+              else
+                echo "⚠️ Local tag creation failed for v$CANDIDATE_VERSION"
+              fi
+            else
+              echo "⚠️ Tag v$CANDIDATE_VERSION already exists remotely"
+            fi
+
             PATCH=$((PATCH + 1))
-            VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          fi
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep 2
+          done
 
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "✅ Using version: v$VERSION"
-
-          # ⚡ Single atomic operation - 3x faster
-          if ! git tag "v$VERSION" || ! git push origin "v$VERSION"; then
-            echo "❌ Tag creation failed (likely race condition)"
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ Failed to create tag after $MAX_ATTEMPTS attempts"
             exit 1
           fi
-
-          echo "✅ Tag v$VERSION created successfully"
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
