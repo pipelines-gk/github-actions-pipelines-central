@@ -225,38 +225,36 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           VERSION="v${{ env.VERSION }}"
+          PROJECT="${{ inputs.project_name }}"
+          REPO="${{ github.repository }}"
           
           echo "📝 Generating changelog for $VERSION..."
           
           PREV_TAG=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || echo "")
           
           if [ -z "$PREV_TAG" ]; then
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$VERSION")
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$VERSION" 2>/dev/null || echo "- Initial release")
           else
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG..$VERSION")
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG..$VERSION" 2>/dev/null || echo "- No changes")
           fi
           
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="- Initial release"
-          fi
-          
-          RELEASE_NOTES="## 🚀 What's Changed
+          cat > /tmp/release_notes.md << EOF
+          ## 🚀 What's Changed
           
           $CHANGELOG
           
           ## 📦 Docker Images
           
           \`\`\`bash
-          docker pull registry.digitalocean.com/gainkode/${{ inputs.project_name }}:$VERSION
-          docker pull registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
+          docker pull registry.digitalocean.com/gainkode/${PROJECT}:${VERSION}
+          docker pull registry.digitalocean.com/gainkode/${PROJECT}:latest
           \`\`\`
           
-          **Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$VERSION"
-          
-          echo "$RELEASE_NOTES" > /tmp/release_notes.md
+          **Full Changelog**: https://github.com/${REPO}/compare/${PREV_TAG}...${VERSION}
+          EOF
           
           gh release create "$VERSION" \
-            --repo "${{ github.repository }}" \
+            --repo "$REPO" \
             --title "Release $VERSION" \
             --notes-file /tmp/release_notes.md
           
