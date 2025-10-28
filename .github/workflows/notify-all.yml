@@ -1,0 +1,64 @@
+name: Send All Notifications
+
+on:
+  workflow_call:
+    inputs:
+      workflow_status:
+        required: true
+        type: string
+        description: "success or failure"
+      version:
+        required: false
+        type: string
+        default: "N/A"
+      project_name:
+        required: false
+        type: string
+        default: ""
+      build_duration:
+        required: false
+        type: string
+        default: ""
+      commit_message:
+        required: false
+        type: string
+        default: ""
+      branch_name:
+        required: false
+        type: string
+        default: ""
+      repository:
+        required: false
+        type: string
+        default: ""
+      run_id:
+        required: false
+        type: string
+        default: ""
+      run_url:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  notify-telegram:
+    uses: ./.github/workflows/notifications/notify-telegram.yml
+    with:
+      workflow_status: ${{ inputs.workflow_status }}
+      version: ${{ inputs.version }}
+      project_name: ${{ inputs.project_name }}
+      build_duration: ${{ inputs.build_duration }}
+      commit_message: ${{ inputs.commit_message }}
+      branch_name: ${{ inputs.branch_name }}
+      repository: ${{ inputs.repository }}
+      run_id: ${{ inputs.run_id }}
+      run_url: ${{ inputs.run_url }}
+
+  notify-clickup:
+    uses: ./.github/workflows/notifications/notify-clickup-chat.yml
+    with:
+      workflow_status: ${{ inputs.workflow_status }}
+      version: ${{ inputs.version }}
+      project_name: ${{ inputs.project_name }}
+      build_duration: ${{ inputs.build_duration }}
+

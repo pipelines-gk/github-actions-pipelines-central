@@ -42,14 +42,12 @@ jobs:
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
-          # Clean message for JSON (escape quotes and newlines)
           CLEAN_MESSAGE=$(echo "$MESSAGE" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
           echo "message=$CLEAN_MESSAGE" >> $GITHUB_OUTPUT
 
       - name: Build notification message
         id: message
         run: |
-          # Prepare variables
           EMOJI="${{ steps.vars.outputs.emoji }}"
           STATUS_TEXT="${{ steps.vars.outputs.status_text }}"
           WORKFLOW_NAME="${{ github.workflow }}"
@@ -59,16 +57,13 @@ jobs:
           RUN_ID="${{ github.run_id }}"
           GITHUB_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          # Build structured message
           MESSAGE="$EMOJI **Deployment $STATUS_TEXT**\n\n"
           MESSAGE+="---\n\n"
 
-          # Project info (if provided)
           if [ -n "${{ inputs.project_name }}" ]; then
             MESSAGE+="📦 **Project:** \`${{ inputs.project_name }}\`\n"
           fi
 
-          # Version info (if provided)
           if [ "${{ inputs.version }}" != "N/A" ]; then
             MESSAGE+="🏷️ **Version:** \`${{ inputs.version }}\`\n"
           fi
@@ -79,14 +74,12 @@ jobs:
           MESSAGE+="• 📂 **Repository:** \`$REPOSITORY\`\n"
           MESSAGE+="• 🔢 **Run ID:** \`$RUN_ID\`\n"
 
-          # Duration (if provided)
           if [ -n "${{ inputs.build_duration }}" ] && [ "${{ inputs.build_duration }}" != "" ]; then
             MESSAGE+="• ⏱️ **Duration:** ${{ inputs.build_duration }}\n"
           fi
 
           MESSAGE+="\n👉 [View full details on GitHub]($GITHUB_URL)"
 
-          # Escape for JSON
           MESSAGE_JSON=$(echo "$MESSAGE" | sed 's/"/\\"/g')
           echo "content=$MESSAGE_JSON" >> $GITHUB_OUTPUT
 
@@ -98,10 +91,8 @@ jobs:
         run: |
           echo "🚀 Sending ClickUp notification..."
 
-          # Use printf to create proper JSON
           JSON_DATA=$(printf '{"content": "%s", "content_format": "text/md"}' "${{ steps.message.outputs.content }}")
 
-          # Send the notification
           RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\n" -X POST \
             -H "Authorization: $API_KEY" \
             -H "Content-Type: application/json" \
@@ -117,3 +108,4 @@ jobs:
             echo "Response: $RESPONSE"
             exit 1
           fi
+
