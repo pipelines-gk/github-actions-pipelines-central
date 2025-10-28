@@ -33,6 +33,7 @@ permissions:
   contents: write
   packages: write
   actions: read
+  pull-requests: write
 
 concurrency:
   group: build-${{ inputs.project_name }}-${{ github.ref }}
