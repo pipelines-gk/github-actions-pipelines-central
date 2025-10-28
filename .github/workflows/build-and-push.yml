@@ -130,7 +130,7 @@ jobs:
             echo "Using last tag as base: v${MAJOR}.${MINOR}.${PATCH}"
           fi
           
-          ALL_TAGS=$(git ls-remote --tags origin | awk "{print \$2}" | sed 's|refs/tags/||' | grep "^v${MAJOR}\.${MINOR}\." || true)
+          ALL_TAGS=$(git ls-remote --tags origin | cut -f2 | sed 's|refs/tags/||' | grep "^v${MAJOR}\.${MINOR}\." || true)
           
           if [ -z "$ALL_TAGS" ]; then
             FINAL_VERSION="${MAJOR}.${MINOR}.${PATCH}"
@@ -234,9 +234,9 @@ jobs:
           PREV_TAG=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || echo "")
           
           if [ -z "$PREV_TAG" ]; then
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$VERSION" 2>/dev/null || echo "- Initial release")
+            CHANGELOG=$(git log --pretty=format:'- %s (%h)' "$VERSION" 2>/dev/null || echo "- Initial release")
           else
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG..$VERSION" 2>/dev/null || echo "- No changes")
+            CHANGELOG=$(git log --pretty=format:'- %s (%h)' "$PREV_TAG..$VERSION" 2>/dev/null || echo "- No changes")
           fi
           
           cat > /tmp/release_notes.md << EOF
