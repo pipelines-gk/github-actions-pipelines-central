@@ -50,7 +50,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 10
+          fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Node.js
@@ -125,7 +125,10 @@ jobs:
           IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
           
           if [ "$BASE_VERSION" = "0.0.0" ]; then
-            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            LAST_TAG=$(git tag -l "v*.*.*" | sort -V | tail -1)
+            if [ -z "$LAST_TAG" ]; then
+              LAST_TAG="v0.0.0"
+            fi
             LAST_TAG_NO_V="${LAST_TAG#v}"
             IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_TAG_NO_V"
             echo "Using last tag as base: v${MAJOR}.${MINOR}.${PATCH}"
