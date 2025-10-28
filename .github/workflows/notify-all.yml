@@ -42,7 +42,7 @@ on:
 
 jobs:
   notify-telegram:
-    uses: ./.github/workflows/notifications/notify-telegram.yml
+    uses: ./.github/workflows/notify-telegram.yml
     with:
       workflow_status: ${{ inputs.workflow_status }}
       version: ${{ inputs.version }}
@@ -55,7 +55,7 @@ jobs:
       run_url: ${{ inputs.run_url }}
 
   notify-clickup:
-    uses: ./.github/workflows/notifications/notify-clickup-chat.yml
+    uses: ./.github/workflows/notify-clickup-chat.yml
     with:
       workflow_status: ${{ inputs.workflow_status }}
       version: ${{ inputs.version }}
