@@ -83,7 +83,7 @@ jobs:
           WORKDIR="${{ inputs.workdir }}"
           ENV_PATH="$WORKDIR/.env"
           [ "$WORKDIR" = "." ] && ENV_PATH=".env"
-          [ -f "$ENV_PATH" ] || { echo "❌ .env not found"; exit 1; }
+          [ -f "$ENV_PATH" ] || { echo ".env not found"; exit 1; }
 
       - name: Process .env file and extract vars
         run: |
@@ -91,8 +91,8 @@ jobs:
           [ "$WORKDIR" != "." ] && cd "$WORKDIR"
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
-          [ -n "$DOCR_USERNAME" ] && echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV || (echo "❌ Missing DOCR_USERNAME" && exit 1)
-          [ -n "$DOCR_PASSWORD" ] && echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV || (echo "❌ Missing DOCR_PASSWORD" && exit 1)
+          [ -n "$DOCR_USERNAME" ] && echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV || (echo "Missing DOCR_USERNAME" && exit 1)
+          [ -n "$DOCR_PASSWORD" ] && echo "DOCR_PASSWORD=$DOCR_PASSWORD" >> $GITHUB_ENV || (echo "Missing DOCR_PASSWORD" && exit 1)
 
       - name: Run Release Please (version only)
         id: release
@@ -110,7 +110,7 @@ jobs:
           VERSION="${{ steps.release.outputs.version }}"
           if [ -z "$VERSION" ]; then
             VERSION="0.0.0"
-            echo "⚠️ No version from Release Please, will use smart versioning"
+            echo "No version from Release Please, will use smart versioning"
           fi
           echo "BASE_VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -127,7 +127,7 @@ jobs:
           if [ "$BASE_VERSION" = "0.0.0" ]; then
             LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             IFS='.' read -r MAJOR MINOR PATCH <<< "${LAST_TAG#v}"
-            echo "📦 Using last tag as base: v${MAJOR}.${MINOR}.${PATCH}"
+            echo "Using last tag as base: v${MAJOR}.${MINOR}.${PATCH}"
           fi
           
           ALL_TAGS=$(git ls-remote --tags origin | awk '{print $2}' | sed 's|refs/tags/||' | grep "^v${MAJOR}\.${MINOR}\." || true)
@@ -140,11 +140,11 @@ jobs:
             FINAL_VERSION="${MAJOR}.${MINOR}.$((MAX_PATCH + 1))"
           fi
           
-          echo "🏷️ Computed version: v${FINAL_VERSION}"
+          echo "Computed version: v${FINAL_VERSION}"
           
           for i in 1 2 3; do
             if git tag "v${FINAL_VERSION}" 2>/dev/null && git push origin "v${FINAL_VERSION}" 2>/dev/null; then
-              echo "✅ Tag created successfully: v${FINAL_VERSION}"
+              echo "Tag created successfully: v${FINAL_VERSION}"
               echo "VERSION=${FINAL_VERSION}" >> $GITHUB_ENV
               echo "version=${FINAL_VERSION}" >> $GITHUB_OUTPUT
               exit 0
@@ -152,10 +152,11 @@ jobs:
             git tag -d "v${FINAL_VERSION}" 2>/dev/null || true
             IFS='.' read -r M N P <<< "${FINAL_VERSION}"
             FINAL_VERSION="${M}.${N}.$((P + 1)}"
-            echo "⚠️ Tag collision, retrying with v${FINAL_VERSION} (attempt $i/3)"
+            echo "Tag collision, retrying with v${FINAL_VERSION} (attempt $i/3)"
             [ $i -lt 3 ] && sleep 1
           done
-          echo "❌ Failed to create tag after 3 attempts"; exit 1
+          echo "Failed to create tag after 3 attempts"
+          exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -228,7 +229,7 @@ jobs:
           PROJECT="${{ inputs.project_name }}"
           REPO="${{ github.repository }}"
           
-          echo "📝 Generating changelog for $VERSION..."
+           echo "Generating changelog for $VERSION..."
           
           PREV_TAG=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || echo "")
           
@@ -258,10 +259,10 @@ jobs:
             --title "Release $VERSION" \
             --notes-file /tmp/release_notes.md
           
-          echo "✅ GitHub Release created: $VERSION"
+           echo "GitHub Release created: $VERSION"
 
       - name: Notify deployment failure
         if: failure()
         run: |
-          echo "## ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Failed" >> $GITHUB_STEP_SUMMARY
           echo "The Docker build failed." >> $GITHUB_STEP_SUMMARY
