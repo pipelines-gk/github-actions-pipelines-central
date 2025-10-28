@@ -85,7 +85,7 @@ jobs:
           ENV_PATH="$WORKDIR/.env"
           [ "$WORKDIR" = "." ] && ENV_PATH=".env"
           if [ ! -f "$ENV_PATH" ]; then
-            echo "❌ .env not found"
+            echo ".env not found"
             exit 1
           fi
 
@@ -96,11 +96,11 @@ jobs:
           DOCR_USERNAME=$(grep "^DOCR_USERNAME=" .env | cut -d'=' -f2)
           DOCR_PASSWORD=$(grep "^DOCR_PASSWORD=" .env | cut -d'=' -f2)
           if [ -z "$DOCR_USERNAME" ]; then
-            echo "❌ Missing DOCR_USERNAME"
+            echo "Missing DOCR_USERNAME"
             exit 1
           fi
           if [ -z "$DOCR_PASSWORD" ]; then
-            echo "❌ Missing DOCR_PASSWORD"
+            echo "Missing DOCR_PASSWORD"
             exit 1
           fi
           echo "DOCR_USERNAME=$DOCR_USERNAME" >> $GITHUB_ENV
@@ -122,7 +122,7 @@ jobs:
           VERSION="${{ steps.release.outputs.version }}"
           if [ -z "$VERSION" ]; then
             VERSION="0.0.0"
-            echo "⚠️ No version from Release Please, will use smart versioning"
+            echo "No version from Release Please, will use smart versioning"
           fi
           echo "BASE_VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -139,7 +139,7 @@ jobs:
           if [ "$BASE_VERSION" = "0.0.0" ]; then
             LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             IFS='.' read -r MAJOR MINOR PATCH <<< "${LAST_TAG#v}"
-            echo "📦 Using last tag as base: v${MAJOR}.${MINOR}.${PATCH}"
+            echo "Using last tag as base: v${MAJOR}.${MINOR}.${PATCH}"
           fi
           
           ALL_TAGS=$(git ls-remote --tags origin | awk '{print $2}' | sed 's|refs/tags/||' | grep "^v${MAJOR}\.${MINOR}\." || true)
@@ -152,11 +152,11 @@ jobs:
             FINAL_VERSION="${MAJOR}.${MINOR}.$((MAX_PATCH + 1))"
           fi
           
-          echo "🏷️ Computed version: v${FINAL_VERSION}"
+          echo "Computed version: v${FINAL_VERSION}"
           
           for i in 1 2 3; do
             if git tag "v${FINAL_VERSION}" 2>/dev/null && git push origin "v${FINAL_VERSION}" 2>/dev/null; then
-              echo "✅ Tag created successfully: v${FINAL_VERSION}"
+              echo "Tag created successfully: v${FINAL_VERSION}"
               echo "VERSION=${FINAL_VERSION}" >> $GITHUB_ENV
               echo "version=${FINAL_VERSION}" >> $GITHUB_OUTPUT
               exit 0
@@ -164,10 +164,10 @@ jobs:
             git tag -d "v${FINAL_VERSION}" 2>/dev/null || true
             IFS='.' read -r M N P <<< "${FINAL_VERSION}"
             FINAL_VERSION="${M}.${N}.$((P + 1)}"
-            echo "⚠️ Tag collision, retrying with v${FINAL_VERSION} (attempt $i/3)"
+            echo "Tag collision, retrying with v${FINAL_VERSION} (attempt $i/3)"
             [ $i -lt 3 ] && sleep 1
           done
-          echo "❌ Failed to create tag after 3 attempts"
+          echo "Failed to create tag after 3 attempts"
           exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
