@@ -130,12 +130,12 @@ jobs:
             echo "Using last tag as base: v${MAJOR}.${MINOR}.${PATCH}"
           fi
           
-          ALL_TAGS=$(git ls-remote --tags origin | cut -f2 | sed 's|refs/tags/||' | grep "^v${MAJOR}\.${MINOR}\." || true)
+          ALL_TAGS=$(git ls-remote --tags origin | cut -f2 | sed 's|refs/tags/||' | grep "^v${MAJOR}[.]${MINOR}[.]" || true)
           
           if [ -z "$ALL_TAGS" ]; then
             FINAL_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           else
-            MAX_PATCH=$(echo "$ALL_TAGS" | sed "s|^v${MAJOR}\.${MINOR}\.||" | grep -E '^[0-9]+$' | sort -n | tail -1)
+            MAX_PATCH=$(echo "$ALL_TAGS" | sed "s|^v${MAJOR}[.]${MINOR}[.]||" | grep -E '^[0-9]+$' | sort -n | tail -1)
             [ -z "$MAX_PATCH" ] && MAX_PATCH=0
             FINAL_VERSION="${MAJOR}.${MINOR}.$((MAX_PATCH + 1))"
           fi
