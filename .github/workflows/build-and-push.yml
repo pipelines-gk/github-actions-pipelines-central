@@ -198,7 +198,6 @@ jobs:
           push: true
           tags: |
             registry.digitalocean.com/gainkode/${{ inputs.project_name }}:v${{ env.VERSION }}
-            registry.digitalocean.com/gainkode/${{ inputs.project_name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -224,7 +223,6 @@ jobs:
           echo "| **Registry** | \`registry.digitalocean.com/gainkode/${PROJECT}\` |" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Image Tags" >> $GITHUB_STEP_SUMMARY
           echo "- \`registry.digitalocean.com/gainkode/${PROJECT}:v${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`registry.digitalocean.com/gainkode/${PROJECT}:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "### ⚡ Build Meta" >> $GITHUB_STEP_SUMMARY
           echo "- Cache: GHA" >> $GITHUB_STEP_SUMMARY
           echo "- Compression: zstd level 3" >> $GITHUB_STEP_SUMMARY
@@ -258,7 +256,6 @@ jobs:
           
           \`\`\`bash
           docker pull registry.digitalocean.com/gainkode/${PROJECT}:${VERSION}
-          docker pull registry.digitalocean.com/gainkode/${PROJECT}:latest
           \`\`\`
           
           **Full Changelog**: https://github.com/${REPO}/compare/${PREV_TAG}...${VERSION}
