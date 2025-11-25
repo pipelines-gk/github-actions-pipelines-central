@@ -109,25 +109,36 @@ jobs:
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
       - name: Send Telegram Notification
+        env:
+          EMOJI: ${{ steps.vars.outputs.emoji }}
+          WORKFLOW_STATUS: ${{ inputs.workflow_status }}
+          PROJECT_NAME: ${{ inputs.project_name }}
+          VERSION: ${{ inputs.version }}
+          DURATION: ${{ steps.duration.outputs.duration }}
+          COMMIT_MSG: ${{ steps.commit.outputs.message }}
+          BRANCH: ${{ steps.metadata.outputs.branch }}
+          REPOSITORY: ${{ steps.metadata.outputs.repository }}
+          RUN_ID: ${{ steps.metadata.outputs.run_id }}
+          RUN_URL: ${{ steps.metadata.outputs.run_url }}
         run: |
-          HEADER="${{ steps.vars.outputs.emoji }} *Deployment ${{ inputs.workflow_status }}*"
+          HEADER="$EMOJI *Deployment $WORKFLOW_STATUS*"
 
           PROJECT_INFO=""
-          if [ -n "${{ inputs.project_name }}" ]; then
-            PROJECT_INFO="%0A%0A📦 *Project:* \`${{ inputs.project_name }}\`"
+          if [ -n "$PROJECT_NAME" ]; then
+            PROJECT_INFO="%0A%0A📦 *Project:* \`$PROJECT_NAME\`"
           fi
 
           VERSION_INFO=""
-          if [ "${{ inputs.version }}" != "N/A" ]; then
-            VERSION_INFO="%0A🏷️ *Version:* \`${{ inputs.version }}\`"
+          if [ "$VERSION" != "N/A" ]; then
+            VERSION_INFO="%0A🏷️ *Version:* \`$VERSION\`"
           fi
 
           DURATION_INFO=""
-          if [ "${{ steps.duration.outputs.duration }}" != "N/A" ]; then
-            DURATION_INFO="%0A⏱️ *Duration:* ${{ steps.duration.outputs.duration }}"
+          if [ "$DURATION" != "N/A" ]; then
+            DURATION_INFO="%0A⏱️ *Duration:* $DURATION"
           fi
 
-          TEXT="$HEADER$PROJECT_INFO$VERSION_INFO%0A%0A📝 *Commit:* ${{ steps.commit.outputs.message }}%0A🌿 *Branch:* \`${{ steps.metadata.outputs.branch }}\`%0A📂 *Repository:* \`${{ steps.metadata.outputs.repository }}\`%0A🔢 *Run ID:* \`${{ steps.metadata.outputs.run_id }}\`$DURATION_INFO%0A%0A👉 [Ver detalles completos](${{ steps.metadata.outputs.run_url }})"
+          TEXT="$HEADER$PROJECT_INFO$VERSION_INFO%0A%0A📝 *Commit:* $COMMIT_MSG%0A🌿 *Branch:* \`$BRANCH\`%0A📂 *Repository:* \`$REPOSITORY\`%0A🔢 *Run ID:* \`$RUN_ID\`$DURATION_INFO%0A%0A👉 [Ver detalles completos]($RUN_URL)"
 
           curl -s -X POST "https://api.telegram.org/bot7862171298:AAE_UGZmZlqbdjCGmFXub0knHtSDPVdrtrY/sendMessage" \
             -d chat_id=307567817 \

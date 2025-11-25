@@ -49,25 +49,30 @@ jobs:
 
       - name: Build notification message
         id: message
+        env:
+          EMOJI: ${{ steps.vars.outputs.emoji }}
+          STATUS_TEXT: ${{ steps.vars.outputs.status_text }}
+          COMMIT_MSG: ${{ steps.commit.outputs.message }}
+          PROJECT_NAME: ${{ inputs.project_name }}
+          VERSION: ${{ inputs.version }}
+          DURATION: ${{ inputs.build_duration }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
         run: |
-          EMOJI="${{ steps.vars.outputs.emoji }}"
-          STATUS_TEXT="${{ steps.vars.outputs.status_text }}"
-          WORKFLOW_NAME="${{ github.workflow }}"
-          REPOSITORY="${{ github.repository }}"
-          COMMIT_MSG="${{ steps.commit.outputs.message }}"
-          BRANCH="${{ github.ref_name }}"
-          RUN_ID="${{ github.run_id }}"
-          GITHUB_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          GITHUB_URL="$SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID"
 
           MESSAGE="$EMOJI **Deployment $STATUS_TEXT**\n\n"
           MESSAGE+="---\n\n"
 
-          if [ -n "${{ inputs.project_name }}" ]; then
-            MESSAGE+="📦 **Project:** \`${{ inputs.project_name }}\`\n"
+          if [ -n "$PROJECT_NAME" ]; then
+            MESSAGE+="📦 **Project:** \`$PROJECT_NAME\`\n"
           fi
 
-          if [ "${{ inputs.version }}" != "N/A" ]; then
-            MESSAGE+="🏷️ **Version:** \`${{ inputs.version }}\`\n"
+          if [ "$VERSION" != "N/A" ]; then
+            MESSAGE+="🏷️ **Version:** \`$VERSION\`\n"
           fi
 
           MESSAGE+="\n**Build Information:**\n"
@@ -76,8 +81,8 @@ jobs:
           MESSAGE+="• 📂 **Repository:** \`$REPOSITORY\`\n"
           MESSAGE+="• 🔢 **Run ID:** \`$RUN_ID\`\n"
 
-          if [ -n "${{ inputs.build_duration }}" ] && [ "${{ inputs.build_duration }}" != "" ]; then
-            MESSAGE+="• ⏱️ **Duration:** ${{ inputs.build_duration }}\n"
+          if [ -n "$DURATION" ] && [ "$DURATION" != "" ]; then
+            MESSAGE+="• ⏱️ **Duration:** $DURATION\n"
           fi
 
           MESSAGE+="\n👉 [View full details on GitHub]($GITHUB_URL)"
