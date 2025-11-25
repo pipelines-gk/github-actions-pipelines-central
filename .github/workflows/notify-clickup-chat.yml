@@ -37,8 +37,10 @@ jobs:
 
       - name: Prepare commit message
         id: commit
+        env:
+          COMMIT_MESSAGE_HEAD: ${{ github.event.head_commit.message }}
         run: |
-          MESSAGE="${{ github.event.head_commit.message }}"
+          MESSAGE="$COMMIT_MESSAGE_HEAD"
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
