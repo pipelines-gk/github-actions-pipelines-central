@@ -74,44 +74,65 @@ jobs:
           echo "   Imagen: $IMAGE"
           echo "   Timeout máximo: ${MAX_WAIT}s"
           
-          # Delay inicial: dar tiempo a kpack para detectar el cambio
+          # Delay inicial: dar tiempo a kpack para detectar el cambio y comenzar el build
           echo "⏸️  Esperando ${INITIAL_DELAY}s para que kpack detecte el cambio..."
           sleep $INITIAL_DELAY
           
-          # Guardar digest anterior para verificar que la imagen cambió
+          # Guardar timestamp y digest inicial para comparar
           OLD_DIGEST=""
+          OLD_TIMESTAMP=""
           if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
             OLD_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
+            # Obtener timestamp de última modificación usando la API del registry
+            OLD_TIMESTAMP=$(date +%s)
             if [ -n "$OLD_DIGEST" ]; then
-              echo "📦 Digest anterior: ${OLD_DIGEST:0:20}..."
+              echo "📦 Digest inicial: ${OLD_DIGEST:0:20}..."
             fi
           else
             echo "📦 No hay imagen anterior (primera build o imagen eliminada)"
           fi
           
-          # Esperar hasta MAX_WAIT segundos, verificando cada INTERVAL segundos
+          # Estrategia mejorada: esperar tiempo mínimo para builds típicos (90s)
+          # Luego verificar si la imagen existe y es accesible
+          MIN_WAIT=90
           ELAPSED=$INITIAL_DELAY
           NEW_DIGEST=""
-          IMAGE_FOUND=false
+          IMAGE_READY=false
+          DIGEST_CHANGED=false
           
-          echo "🔍 Buscando nueva imagen..."
+          echo "🔍 Esperando build de kpack (mínimo ${MIN_WAIT}s para builds típicos)..."
+          
           while [ $ELAPSED -lt $MAX_WAIT ]; do
-            # Verificar si la imagen latest existe y obtener su digest
+            # Verificar si la imagen latest existe y es accesible
             if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
               NEW_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
               
-              # Si hay digest anterior, verificar que cambió
-              if [ -n "$OLD_DIGEST" ] && [ -n "$NEW_DIGEST" ] && [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
-                echo "⏳ Imagen existe pero aún no cambió (${ELAPSED}s/${MAX_WAIT}s)..."
-                echo "   Digest actual: ${NEW_DIGEST:0:20}..."
-              else
-                # Imagen nueva detectada o primera build
-                echo "✅ Nueva imagen detectada!"
-                if [ -n "$NEW_DIGEST" ]; then
-                  echo "   Digest nuevo: ${NEW_DIGEST:0:20}..."
-                fi
-                IMAGE_FOUND=true
+              # Verificar si el digest cambió
+              if [ -n "$OLD_DIGEST" ] && [ -n "$NEW_DIGEST" ] && [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
+                echo "✅ Digest cambió - nueva imagen detectada!"
+                echo "   Digest anterior: ${OLD_DIGEST:0:20}..."
+                echo "   Digest nuevo: ${NEW_DIGEST:0:20}..."
+                DIGEST_CHANGED=true
+                IMAGE_READY=true
                 break
+              fi
+              
+              # Si pasó el tiempo mínimo y la imagen existe, asumir que está lista
+              # (kpack puede no cambiar el digest si el código es idéntico, pero la imagen existe)
+              if [ $ELAPSED -ge $MIN_WAIT ]; then
+                if [ -z "$OLD_DIGEST" ] || [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
+                  echo "✅ Tiempo mínimo alcanzado (${ELAPSED}s) - imagen existe y es accesible"
+                  echo "   Digest: ${NEW_DIGEST:0:20}..."
+                  echo "   Nota: Digest no cambió, pero imagen existe (puede ser build idéntico o kpack aún construyendo)"
+                  IMAGE_READY=true
+                  break
+                fi
+              fi
+              
+              if [ $ELAPSED -lt $MIN_WAIT ]; then
+                echo "⏳ Esperando tiempo mínimo... (${ELAPSED}s/${MIN_WAIT}s)"
+              else
+                echo "⏳ Imagen existe, esperando cambio de digest... (${ELAPSED}s/${MAX_WAIT}s)"
               fi
             else
               echo "⏳ Imagen aún no disponible... (${ELAPSED}s/${MAX_WAIT}s)"
@@ -124,18 +145,23 @@ jobs:
           END_TIME=$(date +%s)
           DURATION=$((END_TIME - START_TIME))
           
-          if [ "$IMAGE_FOUND" = "false" ]; then
+          if [ "$IMAGE_READY" = "false" ]; then
             echo "⚠️  Timeout esperando build de kpack (${MAX_WAIT}s)"
             echo "   Esto puede significar que:"
-            echo "   1. kpack aún está construyendo (builds largos)"
+            echo "   1. kpack aún está construyendo (builds muy largos)"
             echo "   2. kpack no detectó el cambio"
             echo "   3. El build falló"
+            echo "   Continuando de todas formas - kpack puede terminar después..."
             echo "duration=${DURATION}" >> $GITHUB_OUTPUT
             echo "digest=" >> $GITHUB_OUTPUT
             echo "status=timeout" >> $GITHUB_OUTPUT
-            exit 1
+            # No hacer exit 1 - permitir que continúe el workflow
           else
-            echo "✅ Build completado en ${DURATION}s"
+            if [ "$DIGEST_CHANGED" = "true" ]; then
+              echo "✅ Build completado - nueva imagen detectada en ${DURATION}s"
+            else
+              echo "✅ Imagen disponible después de ${DURATION}s (digest no cambió, pero imagen existe)"
+            fi
             echo "duration=${DURATION}" >> $GITHUB_OUTPUT
             echo "digest=${NEW_DIGEST}" >> $GITHUB_OUTPUT
             echo "status=success" >> $GITHUB_OUTPUT

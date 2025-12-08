@@ -70,3 +70,4 @@ jobs:
             TAG=$(echo "$TAG" | xargs)
             echo "   - ${REGISTRY}/${IMAGE_NAME}:${TAG}"
           done
+
