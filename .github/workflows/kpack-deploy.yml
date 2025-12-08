@@ -191,7 +191,7 @@ jobs:
     with:
       registry: ${{ inputs.registry }}
       image_name: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
-      tags: ${{ format('v{0},{1}', needs.versioning.outputs.version, needs.versioning.outputs.sha_short) }}
+      tags: ${{ format('v{0}', needs.versioning.outputs.version) }}
     secrets:
       DOCR_USERNAME: ${{ secrets.DOCR_USERNAME }}
       DOCR_PASSWORD: ${{ secrets.DOCR_PASSWORD }}
