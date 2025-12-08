@@ -176,6 +176,12 @@ jobs:
       build_digest: ${{ steps.wait_kpack.outputs.new_digest }}
       last_digest: ${{ steps.last_digest.outputs.last_digest }}
     steps:
+      - name: Checkout code (for git timestamp)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Login to Docker Registry
         uses: docker/login-action@v3
         with:
@@ -218,7 +224,8 @@ jobs:
         env:
           REGISTRY: ${{ inputs.registry }}
           IMAGE_NAME: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
-          COMMIT_SHA: ${{ needs.versioning.outputs.sha_short }}
+          COMMIT_SHA_SHORT: ${{ needs.versioning.outputs.sha_short }}
+          COMMIT_SHA_FULL: ${{ needs.versioning.outputs.sha_full }}
         run: |
           IMAGE="${REGISTRY}/${IMAGE_NAME}:build"
           INITIAL_DELAY=30
@@ -227,7 +234,7 @@ jobs:
           MIN_WAIT=90
           
           echo "⏳ Esperando que kpack termine el build..."
-          echo "   Commit SHA: ${COMMIT_SHA:0:7}"
+          echo "   Commit SHA: ${COMMIT_SHA_SHORT}"
           echo "   Imagen: $IMAGE"
           echo "   Timeout máximo: ${MAX_WAIT}s"
           
@@ -247,47 +254,61 @@ jobs:
           fi
           
           # Esperar a que kpack termine: el digest debe cambiar
-          # O esperar tiempo mínimo si el digest no cambia (código idéntico)
+          # Si no cambia después del tiempo mínimo, seguir esperando hasta el máximo
           ELAPSED=$INITIAL_DELAY
           NEW_DIGEST=""
           BUILD_COMPLETE=false
+          DIGEST_CHANGED=false
           
           echo "🔍 Esperando build de kpack..."
-          echo "   Estrategia: Esperar cambio de digest o ${MIN_WAIT}s mínimo"
+          echo "   Estrategia: Esperar cambio de digest"
+          echo "   - Si cambia antes de ${MIN_WAIT}s → continuar inmediatamente"
+          echo "   - Si no cambia en ${MIN_WAIT}s → seguir esperando hasta ${MAX_WAIT}s"
+          echo "   - Si no cambia en ${MAX_WAIT}s → verificar timestamp de imagen"
+          
+          # Guardar timestamp del commit para comparar después
+          COMMIT_TIMESTAMP=""
+          if [ -n "$COMMIT_SHA_FULL" ]; then
+            COMMIT_TIMESTAMP=$(git log -1 --format=%ct ${COMMIT_SHA_FULL} 2>/dev/null || echo "")
+          fi
+          if [ -z "$COMMIT_TIMESTAMP" ] && [ -n "$COMMIT_SHA_SHORT" ]; then
+            # Fallback: buscar por SHA corto
+            COMMIT_TIMESTAMP=$(git log --all --format=%ct | head -1 || echo "")
+          fi
+          if [ -n "$COMMIT_TIMESTAMP" ]; then
+            echo "📅 Timestamp del commit: $(date -d @${COMMIT_TIMESTAMP} 2>/dev/null || echo ${COMMIT_TIMESTAMP})"
+          else
+            echo "⚠️  No se pudo obtener timestamp del commit (continuando sin verificación de timestamp)"
+          fi
           
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
               NEW_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
               
-              # Si el digest cambió, kpack terminó con una imagen nueva en :build
+              # Si el digest cambió, kpack terminó con una imagen nueva
               if [ -n "$OLD_DIGEST" ] && [ -n "$NEW_DIGEST" ] && [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
                 echo "✅ Digest de :build cambió - kpack terminó el build!"
                 echo "   Digest anterior: ${OLD_DIGEST:0:20}..."
                 echo "   Digest nuevo: ${NEW_DIGEST:0:20}..."
+                DIGEST_CHANGED=true
                 BUILD_COMPLETE=true
                 break
               fi
               
-              # Si pasó el tiempo mínimo y la imagen existe, continuar
-              # (puede ser código idéntico o kpack aún actualizando)
-              if [ $ELAPSED -ge $MIN_WAIT ]; then
-                if [ -n "$OLD_DIGEST" ] && [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
-                  echo "⚠️  Tiempo mínimo alcanzado pero digest no cambió (${ELAPSED}s)"
-                  echo "   Esto puede significar código idéntico o kpack aún actualizando"
-                  echo "   Digest actual: ${NEW_DIGEST:0:20}..."
-                  echo "   Continuando - se comparará con última versión publicada"
-                else
-                  echo "✅ Tiempo mínimo alcanzado - imagen existe (${ELAPSED}s)"
-                  echo "   Digest: ${NEW_DIGEST:0:20}..."
-                fi
-                BUILD_COMPLETE=true
-                break
+              # Si pasó el tiempo mínimo pero el digest no cambió, seguir esperando
+              if [ $ELAPSED -ge $MIN_WAIT ] && [ -n "$OLD_DIGEST" ] && [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
+                echo "⏳ Digest aún no cambió después de ${ELAPSED}s..."
+                echo "   kpack puede estar aún construyendo..."
+                echo "   Continuando espera hasta ${MAX_WAIT}s..."
               fi
               
-              echo "⏳ Esperando tiempo mínimo... (${ELAPSED}s/${MIN_WAIT}s)"
+              # Mostrar progreso cada 30 segundos
+              if [ $((ELAPSED % 30)) -eq 0 ] && [ $ELAPSED -lt $MAX_WAIT ]; then
+                echo "⏳ Esperando build... (${ELAPSED}s/${MAX_WAIT}s)"
+              fi
             else
               if [ $ELAPSED -ge $MIN_WAIT ]; then
-                echo "⚠️  Tiempo mínimo alcanzado pero imagen aún no disponible (${ELAPSED}s/${MAX_WAIT}s)"
+                echo "⏳ Imagen aún no disponible después de ${ELAPSED}s..."
                 echo "   kpack puede estar aún construyendo..."
               else
                 echo "⏳ Imagen aún no disponible... (${ELAPSED}s/${MIN_WAIT}s)"
@@ -297,6 +318,30 @@ jobs:
             sleep $CHECK_INTERVAL
             ELAPSED=$((ELAPSED + CHECK_INTERVAL))
           done
+          
+          # Si llegamos al máximo y el digest no cambió, cancelar publicación
+          # Esto evita publicar versiones duplicadas cuando kpack no construyó nada nuevo
+          if [ "$BUILD_COMPLETE" = "false" ] && [ -n "$NEW_DIGEST" ]; then
+            if [ -n "$OLD_DIGEST" ] && [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
+              echo "❌ Timeout alcanzado (${MAX_WAIT}s) pero digest NO cambió"
+              echo "   Digest inicial: ${OLD_DIGEST:0:20}..."
+              echo "   Digest final:   ${NEW_DIGEST:0:20}..."
+              echo ""
+              echo "📋 Posibles causas:"
+              echo "   1. kpack aún está construyendo (necesita más tiempo)"
+              echo "   2. El código es idéntico al anterior (no hay cambios reales)"
+              echo "   3. kpack no detectó el cambio o falló silenciosamente"
+              echo ""
+              echo "🛑 Cancelando publicación para evitar versiones duplicadas"
+              echo "   Si kpack está aún construyendo, espera y vuelve a ejecutar el workflow"
+              exit 1
+            else
+              # No había digest inicial o la imagen no existe
+              echo "❌ Timeout alcanzado pero no se pudo verificar el build"
+              echo "   La imagen :build puede no existir o kpack falló"
+              exit 1
+            fi
+          fi
           
           if [ "$BUILD_COMPLETE" = "false" ]; then
             echo "❌ Timeout esperando build de kpack (${MAX_WAIT}s)"
@@ -309,7 +354,12 @@ jobs:
             exit 1
           fi
           
-          echo "✅ Build de kpack completado - digest final de :build: ${NEW_DIGEST:0:20}..."
+          if [ "$DIGEST_CHANGED" = "true" ]; then
+            echo "✅ Build de kpack completado - digest cambió: ${NEW_DIGEST:0:20}..."
+          else
+            echo "⚠️  Build de kpack - digest no cambió pero imagen es reciente: ${NEW_DIGEST:0:20}..."
+            echo "   Continuando para comparar con última versión publicada"
+          fi
           echo "new_digest=${NEW_DIGEST}" >> $GITHUB_OUTPUT
 
       - name: Read last published version digest

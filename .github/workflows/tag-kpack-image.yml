@@ -71,3 +71,4 @@ jobs:
             echo "   - ${REGISTRY}/${IMAGE_NAME}:${TAG}"
           done
 
+
