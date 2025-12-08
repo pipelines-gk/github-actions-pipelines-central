@@ -60,7 +60,7 @@ jobs:
   versioning:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.release.outputs.version }}
+      version: ${{ steps.create_tag.outputs.version || steps.extract_version.outputs.version || '0.0.0' }}
       sha_short: ${{ steps.commit.outputs.sha_short }}
       sha_full: ${{ steps.commit.outputs.sha_full }}
     steps:
@@ -102,6 +102,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create Git tag with smart versioning
+        id: create_tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -134,12 +135,25 @@ jobs:
           fi
           
           echo "Computed version: v${FINAL_VERSION}"
+          echo "📦 Setting output version to: ${FINAL_VERSION}"
+          
+          # Establecer el output ANTES de intentar crear el tag
+          # Esto asegura que siempre tengamos una versión, incluso si el tag falla
+          echo "VERSION=${FINAL_VERSION}" >> $GITHUB_ENV
+          echo "version=${FINAL_VERSION}" >> $GITHUB_OUTPUT
+          
+          # Verificar que el output se estableció correctamente
+          if [ -z "${FINAL_VERSION}" ]; then
+            echo "❌ Error: FINAL_VERSION is empty!"
+            exit 1
+          fi
+          echo "✅ Output version set successfully: ${FINAL_VERSION}"
           
           for i in 1 2 3; do
             TAG_NAME="v${FINAL_VERSION}"
             if git tag "$TAG_NAME" 2>/dev/null && git push origin "$TAG_NAME" 2>/dev/null; then
               echo "Tag created successfully: $TAG_NAME"
-              echo "VERSION=${FINAL_VERSION}" >> $GITHUB_ENV
+              # Actualizar el output con la versión final que se usó
               echo "version=${FINAL_VERSION}" >> $GITHUB_OUTPUT
               exit 0
             fi
@@ -147,11 +161,14 @@ jobs:
             IFS='.' read -r M N P <<< "${FINAL_VERSION}"
             FINAL_VERSION="${M}.${N}.$((P + 1))"
             echo "Tag collision, retrying with v${FINAL_VERSION} (attempt $i/3)"
+            # Actualizar el output con la nueva versión en cada intento
+            echo "version=${FINAL_VERSION}" >> $GITHUB_OUTPUT
             if [ $i -lt 3 ]; then
               sleep 1
             fi
           done
-          echo "Failed to create tag after 3 attempts"
+          echo "⚠️  Failed to create tag after 3 attempts, but version ${FINAL_VERSION} will be used"
+          # El output ya está establecido con la última versión intentada
           exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
