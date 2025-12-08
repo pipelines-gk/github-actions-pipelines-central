@@ -168,11 +168,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
-  check-version:
+  check-digest:
     needs: versioning
     runs-on: ubuntu-latest
     outputs:
-      version_exists: ${{ steps.check.outputs.exists }}
+      has_new_image: ${{ steps.compare.outputs.has_new_image }}
+      build_digest: ${{ steps.build_digest.outputs.build_digest }}
+      last_digest: ${{ steps.last_digest.outputs.last_digest }}
     steps:
       - name: Login to Docker Registry
         uses: docker/login-action@v3
@@ -181,29 +183,129 @@ jobs:
           username: ${{ secrets.DOCR_USERNAME }}
           password: ${{ secrets.DOCR_PASSWORD }}
 
-      - name: Check if version already exists in registry
-        id: check
+      - name: Get last published version
+        id: last_version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          CURRENT_VERSION: v${{ needs.versioning.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Obtener la última versión publicada desde Git tags usando GitHub API
+          # Más confiable que git ls-remote cuando no tenemos acceso directo al repo
+          echo "🔍 Buscando última versión publicada (excluyendo ${CURRENT_VERSION})..."
+          
+          # Usar GitHub API para obtener tags
+          TAGS=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/tags" | \
+            grep -oP '"name":\s*"v\d+\.\d+\.\d+"' | \
+            grep -oP 'v\d+\.\d+\.\d+' | \
+            grep -v "^${CURRENT_VERSION}$" | \
+            sort -V | tail -1 || echo "")
+          
+          if [ -z "$TAGS" ]; then
+            echo "⚠️ No hay versiones anteriores (primera release)"
+            echo "last_version=" >> $GITHUB_OUTPUT
+            echo "is_first_release=true" >> $GITHUB_OUTPUT
+          else
+            LAST_TAG="${TAGS#v}"  # Remover el prefijo 'v'
+            echo "📦 Última versión publicada: v${LAST_TAG}"
+            echo "last_version=${LAST_TAG}" >> $GITHUB_OUTPUT
+            echo "is_first_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Read build digest from kpack
+        id: build_digest
         env:
           REGISTRY: ${{ inputs.registry }}
           IMAGE_NAME: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
-          VERSION: v${{ needs.versioning.outputs.version }}
         run: |
-          IMAGE="${REGISTRY}/${IMAGE_NAME}:${VERSION}"
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
           
-          echo "🔎 Comprobando si ya existe la imagen:"
+          echo "🔍 Leyendo digest de imagen de kpack:"
           echo "   ${IMAGE}"
           
-          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
-            echo "✅ La imagen YA existe en el registry. No se vuelve a publicar."
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "🆕 La imagen NO existe. Se publicará."
-            echo "exists=false" >> $GITHUB_OUTPUT
+          if ! docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "❌ Error: No se pudo leer el digest de :latest"
+            echo "Esto puede significar que kpack aún no ha terminado el build"
+            exit 1
           fi
+          
+          BUILD_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1)
+          
+          if [ -z "$BUILD_DIGEST" ]; then
+            echo "❌ No se pudo extraer el digest de :latest"
+            exit 1
+          fi
+          
+          echo "✅ Digest de build (kpack): ${BUILD_DIGEST:0:20}..."
+          echo "build_digest=${BUILD_DIGEST}" >> $GITHUB_OUTPUT
+
+      - name: Read last published version digest
+        id: last_digest
+        if: steps.last_version.outputs.is_first_release == 'false'
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
+          LAST_VERSION: ${{ steps.last_version.outputs.last_version }}
+        run: |
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:v${LAST_VERSION}"
+          
+          echo "🔍 Leyendo digest de la última versión publicada:"
+          echo "   ${IMAGE}"
+          
+          if ! docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "⚠️ No se pudo leer la última versión (puede no existir en registry)"
+            echo "last_digest=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          LAST_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1)
+          
+          if [ -z "$LAST_DIGEST" ]; then
+            echo "⚠️ No se pudo extraer el digest de la última versión"
+            echo "last_digest=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "✅ Digest última versión (v${LAST_VERSION}): ${LAST_DIGEST:0:20}..."
+          echo "last_digest=${LAST_DIGEST}" >> $GITHUB_OUTPUT
+
+      - name: Compare build vs last published digest
+        id: compare
+        env:
+          BUILD_DIGEST: ${{ steps.build_digest.outputs.build_digest }}
+          LAST_DIGEST: ${{ steps.last_digest.outputs.last_digest }}
+          IS_FIRST_RELEASE: ${{ steps.last_version.outputs.is_first_release }}
+        run: |
+          if [ "$IS_FIRST_RELEASE" = "true" ]; then
+            echo "🆕 Primera release - no hay versión anterior para comparar"
+            echo "has_new_image=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          if [ -z "$LAST_DIGEST" ]; then
+            echo "⚠️ No se pudo obtener digest de última versión - asumiendo imagen nueva"
+            echo "has_new_image=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "🔍 Comparando digests:"
+          echo "   Build (kpack):    ${BUILD_DIGEST:0:20}..."
+          echo "   Última versión:   ${LAST_DIGEST:0:20}..."
+          
+          if [ "$BUILD_DIGEST" = "$LAST_DIGEST" ]; then
+            echo "❌ La imagen de kpack es IGUAL a la última publicada"
+            echo "❌ No hay build nuevo. Cancelando publicación."
+            echo "has_new_image=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "✅ Hay una imagen nueva distinta. Se puede publicar."
+          echo "has_new_image=true" >> $GITHUB_OUTPUT
 
   tag-image:
-    needs: [versioning, check-version]
-    if: needs.check-version.outputs.version_exists == 'false'
+    needs: [versioning, check-digest]
+    if: needs.check-digest.outputs.has_new_image == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Login to Docker Registry
@@ -239,8 +341,8 @@ jobs:
           echo "✅ Imagen publicada exitosamente: ${IMAGE_BASE}:${VERSION}"
 
   update-gitops:
-    needs: [versioning, check-version, tag-image]
-    if: needs.check-version.outputs.version_exists == 'false'
+    needs: [versioning, check-digest, tag-image]
+    if: needs.check-digest.outputs.has_new_image == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -305,9 +407,9 @@ jobs:
           echo "✅ Pusheado: $VERSION_TAG"
 
   create-release:
-    needs: [versioning, check-version, update-gitops]
+    needs: [versioning, check-digest, update-gitops]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.version_exists == 'false'
+    if: needs.check-digest.outputs.has_new_image == 'true'
     permissions:
       contents: write
     steps:
@@ -359,15 +461,15 @@ jobs:
           echo "GitHub Release created: $VERSION"
 
   notify:
-    needs: [versioning, check-version, tag-image, update-gitops, create-release]
+    needs: [versioning, check-digest, tag-image, update-gitops, create-release]
     if: always()
     uses: ./.github/workflows/notify-all.yml
     with:
-      workflow_status: ${{ (needs.versioning.result == 'success' && needs.check-version.result == 'success' && (needs.tag-image.result == 'success' || needs.tag-image.result == 'skipped') && (needs.update-gitops.result == 'success' || needs.update-gitops.result == 'skipped') && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')) && 'success' || 'failure' }}
+      workflow_status: ${{ (needs.versioning.result == 'success' && needs.check-digest.result == 'success' && (needs.tag-image.result == 'success' || needs.tag-image.result == 'skipped') && (needs.update-gitops.result == 'success' || needs.update-gitops.result == 'skipped') && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')) && 'success' || 'failure' }}
       version: ${{ needs.versioning.outputs.version != '' && format('v{0}', needs.versioning.outputs.version) || 'N/A' }}
       project_name: ${{ inputs.project_name }}
       build_duration: ${{ 'N/A' }}
-      commit_message: ${{ format('{0}{1}', (needs.check-version.outputs.version_exists == 'true' && '⚠️ Versión ya existía - ' || ''), github.event.head_commit.message || 'Manual workflow dispatch') }}
+      commit_message: ${{ format('{0}{1}', (needs.check-digest.outputs.has_new_image == 'false' && '⚠️ Imagen sin cambios - ' || ''), github.event.head_commit.message || 'Manual workflow dispatch') }}
       branch_name: ${{ github.ref_name }}
       repository: ${{ github.repository }}
       run_id: ${{ github.run_id }}
