@@ -178,7 +178,6 @@ jobs:
     secrets:
       DOCR_USERNAME: ${{ secrets.DOCR_USERNAME }}
       DOCR_PASSWORD: ${{ secrets.DOCR_PASSWORD }}
-    continue-on-error: false
 
   update-gitops:
     needs: [versioning, tag-image]
