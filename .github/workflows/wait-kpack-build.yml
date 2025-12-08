@@ -78,61 +78,28 @@ jobs:
           echo "⏸️  Esperando ${INITIAL_DELAY}s para que kpack detecte el cambio..."
           sleep $INITIAL_DELAY
           
-          # Guardar timestamp y digest inicial para comparar
-          OLD_DIGEST=""
-          OLD_TIMESTAMP=""
-          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
-            OLD_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
-            # Obtener timestamp de última modificación usando la API del registry
-            OLD_TIMESTAMP=$(date +%s)
-            if [ -n "$OLD_DIGEST" ]; then
-              echo "📦 Digest inicial: ${OLD_DIGEST:0:20}..."
-            fi
-          else
-            echo "📦 No hay imagen anterior (primera build o imagen eliminada)"
-          fi
-          
-          # Estrategia optimizada: esperar tiempo mínimo (60s) para builds típicos
-          # kpack siempre pushea a :latest, pero puede no actualizar el digest inmediatamente
-          # Después del tiempo mínimo, si la imagen existe, continuar (el workflow re-tageará con SHA)
+          # Estrategia simplificada: esperar tiempo mínimo, luego verificar si latest existe
+          # No comparamos digests - kpack siempre pushea a :latest, el workflow re-tageará con versión
           MIN_WAIT=60
           ELAPSED=$INITIAL_DELAY
           NEW_DIGEST=""
           IMAGE_READY=false
-          DIGEST_CHANGED=false
           
           echo "🔍 Esperando build de kpack..."
-          echo "   Estrategia: Esperar ${MIN_WAIT}s mínimo, luego continuar si imagen existe"
-          echo "   Nota: kpack siempre pushea a :latest, el workflow re-tageará con commit SHA"
+          echo "   Estrategia: Esperar ${MIN_WAIT}s mínimo, luego continuar si :latest existe"
+          echo "   Nota: kpack siempre pushea a :latest, el workflow re-tageará con vX.Y.Z"
           
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             # Verificar si la imagen latest existe y es accesible
             if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
               NEW_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
               
-              # Verificar si el digest cambió (mejor caso - nueva imagen detectada inmediatamente)
-              if [ -n "$OLD_DIGEST" ] && [ -n "$NEW_DIGEST" ] && [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
-                echo "✅ Digest cambió - nueva imagen detectada!"
-                echo "   Digest anterior: ${OLD_DIGEST:0:20}..."
-                echo "   Digest nuevo: ${NEW_DIGEST:0:20}..."
-                DIGEST_CHANGED=true
-                IMAGE_READY=true
-                break
-              fi
-              
-              # Si pasó el tiempo mínimo y la imagen existe, continuar siempre
-              # kpack puede haber construido pero no actualizado latest inmediatamente
-              # o el código puede ser idéntico y el digest no cambió
-              # El workflow re-tageará con commit SHA de todas formas
+              # Si pasó el tiempo mínimo y la imagen existe, continuar
+              # kpack construye a :latest, el workflow re-tageará con versión semántica
               if [ $ELAPSED -ge $MIN_WAIT ]; then
-                echo "✅ Tiempo mínimo alcanzado (${ELAPSED}s) - imagen existe y es accesible"
+                echo "✅ Tiempo mínimo alcanzado (${ELAPSED}s) - imagen :latest existe y es accesible"
                 echo "   Digest: ${NEW_DIGEST:0:20}..."
-                if [ -n "$OLD_DIGEST" ] && [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
-                  echo "   Nota: Digest cambió pero se detectó después del tiempo mínimo"
-                elif [ -n "$OLD_DIGEST" ] && [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
-                  echo "   Nota: Digest no cambió (código idéntico o kpack aún actualizando)"
-                fi
-                echo "   Continuando - el workflow re-tageará con commit SHA"
+                echo "   Continuando - el workflow re-tageará con versión semántica (vX.Y.Z)"
                 IMAGE_READY=true
                 break
               fi
@@ -166,11 +133,7 @@ jobs:
             echo "status=timeout" >> $GITHUB_OUTPUT
             # No hacer exit 1 - permitir que continúe el workflow
           else
-            if [ "$DIGEST_CHANGED" = "true" ]; then
-              echo "✅ Build completado - nueva imagen detectada en ${DURATION}s"
-            else
-              echo "✅ Imagen disponible después de ${DURATION}s (digest no cambió, pero imagen existe)"
-            fi
+            echo "✅ Imagen :latest disponible después de ${DURATION}s"
             echo "duration=${DURATION}" >> $GITHUB_OUTPUT
             echo "digest=${NEW_DIGEST}" >> $GITHUB_OUTPUT
             echo "status=success" >> $GITHUB_OUTPUT

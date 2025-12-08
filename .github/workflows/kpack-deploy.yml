@@ -174,7 +174,7 @@ jobs:
     with:
       registry: ${{ inputs.registry }}
       image_name: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
-      tags: ${{ format('{0},{1},v{2}', needs.versioning.outputs.sha_short, needs.versioning.outputs.sha_full, needs.versioning.outputs.version) }}
+      tags: ${{ format('v{0},{1}', needs.versioning.outputs.version, needs.versioning.outputs.sha_short) }}
     secrets:
       DOCR_USERNAME: ${{ secrets.DOCR_USERNAME }}
       DOCR_PASSWORD: ${{ secrets.DOCR_PASSWORD }}
@@ -197,36 +197,36 @@ jobs:
         env:
           FILE: ${{ inputs.gitops_path }}
           IMAGE_KEY: ${{ inputs.gitops_image_key }}
-          SHA: ${{ needs.versioning.outputs.sha_short }}
+          VERSION_TAG: v${{ needs.versioning.outputs.version }}
         run: |
           if [ ! -f "$FILE" ]; then
             echo "❌ Error: No se encontró $FILE"
             exit 1
           fi
           
-          # Actualizar newTag solo para la imagen especificada
+          # Actualizar newTag solo para la imagen especificada con versión semántica
           # Usar el patrón exacto del nombre de la imagen
-          awk -v sha="$SHA" -v image_key="$IMAGE_KEY" '
+          awk -v version_tag="$VERSION_TAG" -v image_key="$IMAGE_KEY" '
             /name: .*'"$IMAGE_KEY"'/ {
               in_target = 1
               print
               next
             }
             in_target && /newTag:/ {
-              print "    newTag: " sha
+              print "    newTag: " version_tag
               in_target = 0
               next
             }
             { print }
           ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
           
-          echo "✅ Actualizado con SHA: $SHA"
+          echo "✅ Actualizado con versión: $VERSION_TAG"
           git diff "$FILE" || true
 
       - name: Commit and push
         working-directory: gitops-repo
         env:
-          SHA: ${{ needs.versioning.outputs.sha_short }}
+          VERSION_TAG: v${{ needs.versioning.outputs.version }}
           PROJECT: ${{ inputs.project_name }}
         run: |
           git config user.name "GitHub Actions"
@@ -239,10 +239,10 @@ jobs:
             exit 0
           fi
           
-          git commit -m "chore: update $PROJECT to commit $SHA [skip ci]"
+          git commit -m "chore: update $PROJECT to $VERSION_TAG [skip ci]"
           git push origin main
           
-          echo "✅ Pusheado: $SHA"
+          echo "✅ Pusheado: $VERSION_TAG"
 
   create-release:
     needs: [versioning, update-gitops]
