@@ -33,11 +33,6 @@ on:
         required: true
         type: string
         description: "Image key in kustomization.yaml to update"
-      kpack_wait_timeout:
-        required: false
-        type: number
-        default: 480
-        description: "Maximum wait time for kpack build in seconds"
     secrets:
       GH_TOKEN:
         required: true
@@ -173,31 +168,79 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
-  wait-kpack:
+  check-version:
     needs: versioning
-    uses: ./.github/workflows/wait-kpack-build.yml
-    with:
-      registry: ${{ inputs.registry }}
-      image_name: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
-      commit_sha: ${{ needs.versioning.outputs.sha_short }}
-      max_wait: ${{ inputs.kpack_wait_timeout }}
-    secrets:
-      DOCR_USERNAME: ${{ secrets.DOCR_USERNAME }}
-      DOCR_PASSWORD: ${{ secrets.DOCR_PASSWORD }}
+    runs-on: ubuntu-latest
+    outputs:
+      version_exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.DOCR_USERNAME }}
+          password: ${{ secrets.DOCR_PASSWORD }}
+
+      - name: Check if version already exists in registry
+        id: check
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
+          VERSION: v${{ needs.versioning.outputs.version }}
+        run: |
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:${VERSION}"
+          
+          echo "🔎 Comprobando si ya existe la imagen:"
+          echo "   ${IMAGE}"
+          
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "✅ La imagen YA existe en el registry. No se vuelve a publicar."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "🆕 La imagen NO existe. Se publicará."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
   tag-image:
-    needs: [versioning, wait-kpack]
-    uses: ./.github/workflows/tag-kpack-image.yml
-    with:
-      registry: ${{ inputs.registry }}
-      image_name: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
-      tags: ${{ format('v{0}', needs.versioning.outputs.version) }}
-    secrets:
-      DOCR_USERNAME: ${{ secrets.DOCR_USERNAME }}
-      DOCR_PASSWORD: ${{ secrets.DOCR_PASSWORD }}
+    needs: [versioning, check-version]
+    if: needs.check-version.outputs.version_exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.DOCR_USERNAME }}
+          password: ${{ secrets.DOCR_PASSWORD }}
+
+      - name: Publish versioned image (vX.Y.Z)
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
+          VERSION: v${{ needs.versioning.outputs.version }}
+        run: |
+          IMAGE_BASE="${REGISTRY}/${IMAGE_NAME}"
+          
+          echo "🚀 Publicando imagen ${IMAGE_BASE}:${VERSION}"
+          
+          echo "📥 Pulling latest image..."
+          docker pull "${IMAGE_BASE}:latest" || {
+            echo "❌ Error: No se pudo hacer pull de la imagen latest"
+            echo "Esto puede significar que kpack aún no ha terminado el build"
+            exit 1
+          }
+          
+          echo "🏷️  Tagging ${IMAGE_BASE}:latest -> ${IMAGE_BASE}:${VERSION}"
+          docker tag "${IMAGE_BASE}:latest" "${IMAGE_BASE}:${VERSION}"
+          
+          echo "📤 Pushing ${IMAGE_BASE}:${VERSION}"
+          docker push "${IMAGE_BASE}:${VERSION}"
+          
+          echo "✅ Imagen publicada exitosamente: ${IMAGE_BASE}:${VERSION}"
 
   update-gitops:
-    needs: [versioning, tag-image]
+    needs: [versioning, check-version, tag-image]
+    if: needs.check-version.outputs.version_exists == 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -262,9 +305,9 @@ jobs:
           echo "✅ Pusheado: $VERSION_TAG"
 
   create-release:
-    needs: [versioning, update-gitops]
+    needs: [versioning, check-version, update-gitops]
     runs-on: ubuntu-latest
-    if: success()
+    if: needs.check-version.outputs.version_exists == 'false'
     permissions:
       contents: write
     steps:
@@ -316,15 +359,15 @@ jobs:
           echo "GitHub Release created: $VERSION"
 
   notify:
-    needs: [versioning, wait-kpack, tag-image, update-gitops, create-release]
+    needs: [versioning, check-version, tag-image, update-gitops, create-release]
     if: always()
     uses: ./.github/workflows/notify-all.yml
     with:
-      workflow_status: ${{ (needs.versioning.result == 'success' && needs.wait-kpack.result == 'success' && needs.tag-image.result == 'success' && needs.update-gitops.result == 'success' && needs.create-release.result == 'success') && 'success' || 'failure' }}
+      workflow_status: ${{ (needs.versioning.result == 'success' && needs.check-version.result == 'success' && (needs.tag-image.result == 'success' || needs.tag-image.result == 'skipped') && (needs.update-gitops.result == 'success' || needs.update-gitops.result == 'skipped') && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')) && 'success' || 'failure' }}
       version: ${{ needs.versioning.outputs.version != '' && format('v{0}', needs.versioning.outputs.version) || 'N/A' }}
       project_name: ${{ inputs.project_name }}
-      build_duration: ${{ needs.wait-kpack.outputs.build_duration != '' && format('{0}s', needs.wait-kpack.outputs.build_duration) || 'N/A' }}
-      commit_message: ${{ github.event.head_commit.message || 'Manual workflow dispatch' }}
+      build_duration: ${{ 'N/A' }}
+      commit_message: ${{ format('{0}{1}', (needs.check-version.outputs.version_exists == 'true' && '⚠️ Versión ya existía - ' || ''), github.event.head_commit.message || 'Manual workflow dispatch') }}
       branch_name: ${{ github.ref_name }}
       repository: ${{ github.repository }}
       run_id: ${{ github.run_id }}
