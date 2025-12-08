@@ -92,22 +92,25 @@ jobs:
             echo "📦 No hay imagen anterior (primera build o imagen eliminada)"
           fi
           
-          # Estrategia mejorada: esperar tiempo mínimo para builds típicos (90s)
-          # Luego verificar si la imagen existe y es accesible
-          MIN_WAIT=90
+          # Estrategia optimizada: esperar tiempo mínimo (60s) para builds típicos
+          # kpack siempre pushea a :latest, pero puede no actualizar el digest inmediatamente
+          # Después del tiempo mínimo, si la imagen existe, continuar (el workflow re-tageará con SHA)
+          MIN_WAIT=60
           ELAPSED=$INITIAL_DELAY
           NEW_DIGEST=""
           IMAGE_READY=false
           DIGEST_CHANGED=false
           
-          echo "🔍 Esperando build de kpack (mínimo ${MIN_WAIT}s para builds típicos)..."
+          echo "🔍 Esperando build de kpack..."
+          echo "   Estrategia: Esperar ${MIN_WAIT}s mínimo, luego continuar si imagen existe"
+          echo "   Nota: kpack siempre pushea a :latest, el workflow re-tageará con commit SHA"
           
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             # Verificar si la imagen latest existe y es accesible
             if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
               NEW_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
               
-              # Verificar si el digest cambió
+              # Verificar si el digest cambió (mejor caso - nueva imagen detectada inmediatamente)
               if [ -n "$OLD_DIGEST" ] && [ -n "$NEW_DIGEST" ] && [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
                 echo "✅ Digest cambió - nueva imagen detectada!"
                 echo "   Digest anterior: ${OLD_DIGEST:0:20}..."
@@ -117,25 +120,31 @@ jobs:
                 break
               fi
               
-              # Si pasó el tiempo mínimo y la imagen existe, asumir que está lista
-              # (kpack puede no cambiar el digest si el código es idéntico, pero la imagen existe)
+              # Si pasó el tiempo mínimo y la imagen existe, continuar siempre
+              # kpack puede haber construido pero no actualizado latest inmediatamente
+              # o el código puede ser idéntico y el digest no cambió
+              # El workflow re-tageará con commit SHA de todas formas
               if [ $ELAPSED -ge $MIN_WAIT ]; then
-                if [ -z "$OLD_DIGEST" ] || [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
-                  echo "✅ Tiempo mínimo alcanzado (${ELAPSED}s) - imagen existe y es accesible"
-                  echo "   Digest: ${NEW_DIGEST:0:20}..."
-                  echo "   Nota: Digest no cambió, pero imagen existe (puede ser build idéntico o kpack aún construyendo)"
-                  IMAGE_READY=true
-                  break
+                echo "✅ Tiempo mínimo alcanzado (${ELAPSED}s) - imagen existe y es accesible"
+                echo "   Digest: ${NEW_DIGEST:0:20}..."
+                if [ -n "$OLD_DIGEST" ] && [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
+                  echo "   Nota: Digest cambió pero se detectó después del tiempo mínimo"
+                elif [ -n "$OLD_DIGEST" ] && [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
+                  echo "   Nota: Digest no cambió (código idéntico o kpack aún actualizando)"
                 fi
+                echo "   Continuando - el workflow re-tageará con commit SHA"
+                IMAGE_READY=true
+                break
               fi
               
-              if [ $ELAPSED -lt $MIN_WAIT ]; then
-                echo "⏳ Esperando tiempo mínimo... (${ELAPSED}s/${MIN_WAIT}s)"
-              else
-                echo "⏳ Imagen existe, esperando cambio de digest... (${ELAPSED}s/${MAX_WAIT}s)"
-              fi
+              echo "⏳ Esperando tiempo mínimo... (${ELAPSED}s/${MIN_WAIT}s)"
             else
-              echo "⏳ Imagen aún no disponible... (${ELAPSED}s/${MAX_WAIT}s)"
+              if [ $ELAPSED -ge $MIN_WAIT ]; then
+                echo "⚠️  Tiempo mínimo alcanzado pero imagen aún no disponible (${ELAPSED}s/${MAX_WAIT}s)"
+                echo "   kpack puede estar aún construyendo..."
+              else
+                echo "⏳ Imagen aún no disponible... (${ELAPSED}s/${MIN_WAIT}s)"
+              fi
             fi
             
             sleep $INTERVAL
