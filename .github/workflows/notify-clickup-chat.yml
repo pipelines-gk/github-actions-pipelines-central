@@ -18,6 +18,26 @@ on:
         required: false
         type: string
         default: ""
+      commit_message:
+        required: false
+        type: string
+        default: ""
+      branch_name:
+        required: false
+        type: string
+        default: ""
+      repository:
+        required: false
+        type: string
+        default: ""
+      run_id:
+        required: false
+        type: string
+        default: ""
+      run_url:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   notify_clickup:
