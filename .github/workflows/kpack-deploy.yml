@@ -1,0 +1,315 @@
+name: kpack Deploy Workflow
+
+on:
+  workflow_call:
+    inputs:
+      project_name:
+        required: true
+        type: string
+        description: "Project name (e.g., handy-backend)"
+      registry:
+        required: false
+        type: string
+        default: "registry.digitalocean.com"
+        description: "Docker registry URL"
+      image_name:
+        required: false
+        type: string
+        description: "Image name without registry (defaults to gainkode/{project_name})"
+      workdir:
+        required: false
+        type: string
+        default: "."
+        description: "Working directory for Release Please"
+      gitops_repo:
+        required: true
+        type: string
+        description: "GitOps repository (e.g., pipelines-gk/kubernetes)"
+      gitops_path:
+        required: true
+        type: string
+        description: "Path to kustomization.yaml in GitOps repo"
+      gitops_image_key:
+        required: true
+        type: string
+        description: "Image key in kustomization.yaml to update"
+      kpack_wait_timeout:
+        required: false
+        type: number
+        default: 480
+        description: "Maximum wait time for kpack build in seconds"
+    secrets:
+      GH_TOKEN:
+        required: true
+      DOCR_USERNAME:
+        required: true
+      DOCR_PASSWORD:
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: kpack-deploy-${{ inputs.project_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  versioning:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      sha_short: ${{ steps.commit.outputs.sha_short }}
+      sha_full: ${{ steps.commit.outputs.sha_full }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Get commit SHA
+        id: commit
+        run: |
+          SHA_SHORT=$(git rev-parse --short=7 HEAD)
+          SHA_FULL=$(git rev-parse HEAD)
+          echo "sha_short=$SHA_SHORT" >> $GITHUB_OUTPUT
+          echo "sha_full=$SHA_FULL" >> $GITHUB_OUTPUT
+          echo "📦 Commit SHA corto: $SHA_SHORT"
+          echo "📦 Commit SHA completo: $SHA_FULL"
+
+      - name: Run Release Please (version only)
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          release-type: simple
+          path: ${{ inputs.workdir }}
+          skip-github-release: true
+          skip-github-pull-request: true
+
+      - name: Extract version from Release Please
+        id: extract_version
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="0.0.0"
+            echo "No version from Release Please, will use smart versioning"
+          fi
+          echo "BASE_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Git tag with smart versioning
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global advice.detachedHead false
+          
+          BASE_VERSION="${{ env.BASE_VERSION }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+          
+          if [ "$BASE_VERSION" = "0.0.0" ]; then
+            LAST_TAG=$(git tag -l "v*.*.*" | sort -V | tail -1)
+            if [ -z "$LAST_TAG" ]; then
+              LAST_TAG="v0.0.0"
+            fi
+            LAST_TAG_NO_V="${LAST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_TAG_NO_V"
+            echo "Using last tag as base: v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+          
+          VERSION_PREFIX="v${MAJOR}.${MINOR}."
+          ALL_TAGS=$(git ls-remote --tags origin | cut -f2 | sed 's|refs/tags/||' | grep "^${VERSION_PREFIX}" || true)
+          
+          if [ -z "$ALL_TAGS" ]; then
+            FINAL_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          else
+            MAX_PATCH=$(echo "$ALL_TAGS" | sed "s|^${VERSION_PREFIX}||" | grep -E '^[0-9]+$' | sort -n | tail -1)
+            if [ -z "$MAX_PATCH" ]; then
+              MAX_PATCH=0
+            fi
+            FINAL_VERSION="${MAJOR}.${MINOR}.$((MAX_PATCH + 1))"
+          fi
+          
+          echo "Computed version: v${FINAL_VERSION}"
+          
+          for i in 1 2 3; do
+            TAG_NAME="v${FINAL_VERSION}"
+            if git tag "$TAG_NAME" 2>/dev/null && git push origin "$TAG_NAME" 2>/dev/null; then
+              echo "Tag created successfully: $TAG_NAME"
+              echo "VERSION=${FINAL_VERSION}" >> $GITHUB_ENV
+              echo "version=${FINAL_VERSION}" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            git tag -d "$TAG_NAME" 2>/dev/null || true
+            IFS='.' read -r M N P <<< "${FINAL_VERSION}"
+            FINAL_VERSION="${M}.${N}.$((P + 1))"
+            echo "Tag collision, retrying with v${FINAL_VERSION} (attempt $i/3)"
+            if [ $i -lt 3 ]; then
+              sleep 1
+            fi
+          done
+          echo "Failed to create tag after 3 attempts"
+          exit 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  wait-kpack:
+    needs: versioning
+    uses: ./.github/workflows/wait-kpack-build.yml
+    with:
+      registry: ${{ inputs.registry }}
+      image_name: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
+      commit_sha: ${{ needs.versioning.outputs.sha_short }}
+      max_wait: ${{ inputs.kpack_wait_timeout }}
+    secrets:
+      DOCR_USERNAME: ${{ secrets.DOCR_USERNAME }}
+      DOCR_PASSWORD: ${{ secrets.DOCR_PASSWORD }}
+
+  tag-image:
+    needs: [versioning, wait-kpack]
+    uses: ./.github/workflows/tag-kpack-image.yml
+    with:
+      registry: ${{ inputs.registry }}
+      image_name: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
+      tags: ${{ format('{0},{1},v{2}', needs.versioning.outputs.sha_short, needs.versioning.outputs.sha_full, needs.versioning.outputs.version) }}
+    secrets:
+      DOCR_USERNAME: ${{ secrets.DOCR_USERNAME }}
+      DOCR_PASSWORD: ${{ secrets.DOCR_PASSWORD }}
+    continue-on-error: false
+
+  update-gitops:
+    needs: [versioning, tag-image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.gitops_repo }}
+          token: ${{ secrets.GH_TOKEN }}
+          path: gitops-repo
+
+      - name: Update kustomization.yaml
+        working-directory: gitops-repo
+        env:
+          FILE: ${{ inputs.gitops_path }}
+          IMAGE_KEY: ${{ inputs.gitops_image_key }}
+          SHA: ${{ needs.versioning.outputs.sha_short }}
+        run: |
+          if [ ! -f "$FILE" ]; then
+            echo "❌ Error: No se encontró $FILE"
+            exit 1
+          fi
+          
+          # Actualizar newTag solo para la imagen especificada
+          # Usar el patrón exacto del nombre de la imagen
+          awk -v sha="$SHA" -v image_key="$IMAGE_KEY" '
+            /name: .*'"$IMAGE_KEY"'/ {
+              in_target = 1
+              print
+              next
+            }
+            in_target && /newTag:/ {
+              print "    newTag: " sha
+              in_target = 0
+              next
+            }
+            { print }
+          ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
+          
+          echo "✅ Actualizado con SHA: $SHA"
+          git diff "$FILE" || true
+
+      - name: Commit and push
+        working-directory: gitops-repo
+        env:
+          SHA: ${{ needs.versioning.outputs.sha_short }}
+          PROJECT: ${{ inputs.project_name }}
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          git add "${{ inputs.gitops_path }}"
+          
+          if git diff --staged --quiet; then
+            echo "ℹ️  Sin cambios"
+            exit 0
+          fi
+          
+          git commit -m "chore: update $PROJECT to commit $SHA [skip ci]"
+          git push origin main
+          
+          echo "✅ Pusheado: $SHA"
+
+  create-release:
+    needs: [versioning, update-gitops]
+    runs-on: ubuntu-latest
+    if: success()
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Create GitHub Release with Changelog
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          VERSION: v${{ needs.versioning.outputs.version }}
+          PROJECT: ${{ inputs.project_name }}
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "Generating changelog for $VERSION..."
+          
+          PREV_TAG=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:'- %s (%h)' "$VERSION" 2>/dev/null || echo "- Initial release")
+          else
+            CHANGELOG=$(git log --pretty=format:'- %s (%h)' "$PREV_TAG..$VERSION" 2>/dev/null || echo "- No changes")
+          fi
+          
+          cat > /tmp/release_notes.md << EOF
+          ## 🚀 What's Changed
+          
+          $CHANGELOG
+          
+          ## 📦 Docker Images
+          
+          \`\`\`bash
+          docker pull ${REGISTRY}/${IMAGE_NAME}:${VERSION}
+          docker pull ${REGISTRY}/${IMAGE_NAME}:${{ needs.versioning.outputs.sha_short }}
+          \`\`\`
+          
+          **Full Changelog**: https://github.com/${REPO}/compare/${PREV_TAG}...${VERSION}
+          EOF
+          
+          gh release create "$VERSION" \
+            --repo "$REPO" \
+            --title "Release $VERSION" \
+            --notes-file /tmp/release_notes.md
+          
+          echo "GitHub Release created: $VERSION"
+
+  notify:
+    needs: [versioning, wait-kpack, tag-image, update-gitops, create-release]
+    if: always()
+    uses: ./.github/workflows/notify-all.yml
+    with:
+      workflow_status: ${{ (needs.versioning.result == 'success' && needs.wait-kpack.result == 'success' && needs.tag-image.result == 'success' && needs.update-gitops.result == 'success' && needs.create-release.result == 'success') && 'success' || 'failure' }}
+      version: ${{ needs.versioning.outputs.version != '' && format('v{0}', needs.versioning.outputs.version) || 'N/A' }}
+      project_name: ${{ inputs.project_name }}
+      build_duration: ${{ needs.wait-kpack.outputs.build_duration != '' && format('{0}s', needs.wait-kpack.outputs.build_duration) || 'N/A' }}
+      commit_message: ${{ github.event.head_commit.message || 'Manual workflow dispatch' }}
+      branch_name: ${{ github.ref_name }}
+      repository: ${{ github.repository }}
+      run_id: ${{ github.run_id }}
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

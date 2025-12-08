@@ -1,0 +1,142 @@
+name: Wait for kpack Build
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        required: true
+        type: string
+        description: "Docker registry URL (e.g., registry.digitalocean.com)"
+      image_name:
+        required: true
+        type: string
+        description: "Full image name (e.g., gainkode/handy-backend)"
+      commit_sha:
+        required: false
+        type: string
+        description: "Commit SHA being built"
+      initial_delay:
+        required: false
+        type: number
+        default: 20
+        description: "Initial delay in seconds for kpack to detect changes"
+      max_wait:
+        required: false
+        type: number
+        default: 480
+        description: "Maximum wait time in seconds"
+      check_interval:
+        required: false
+        type: number
+        default: 10
+        description: "Check interval in seconds"
+    secrets:
+      DOCR_USERNAME:
+        required: true
+      DOCR_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  wait-build:
+    runs-on: ubuntu-latest
+    outputs:
+      build_duration: ${{ steps.wait.outputs.duration }}
+      image_digest: ${{ steps.wait.outputs.digest }}
+      build_status: ${{ steps.wait.outputs.status }}
+    steps:
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.DOCR_USERNAME }}
+          password: ${{ secrets.DOCR_PASSWORD }}
+
+      - name: Wait for kpack build
+        id: wait
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+          INITIAL_DELAY: ${{ inputs.initial_delay }}
+          MAX_WAIT: ${{ inputs.max_wait }}
+          INTERVAL: ${{ inputs.check_interval }}
+        run: |
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
+          START_TIME=$(date +%s)
+          
+          echo "⏳ Esperando que kpack termine el build..."
+          if [ -n "$COMMIT_SHA" ]; then
+            echo "   Commit SHA: ${COMMIT_SHA:0:7}"
+          fi
+          echo "   Imagen: $IMAGE"
+          echo "   Timeout máximo: ${MAX_WAIT}s"
+          
+          # Delay inicial: dar tiempo a kpack para detectar el cambio
+          echo "⏸️  Esperando ${INITIAL_DELAY}s para que kpack detecte el cambio..."
+          sleep $INITIAL_DELAY
+          
+          # Guardar digest anterior para verificar que la imagen cambió
+          OLD_DIGEST=""
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            OLD_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
+            if [ -n "$OLD_DIGEST" ]; then
+              echo "📦 Digest anterior: ${OLD_DIGEST:0:20}..."
+            fi
+          else
+            echo "📦 No hay imagen anterior (primera build o imagen eliminada)"
+          fi
+          
+          # Esperar hasta MAX_WAIT segundos, verificando cada INTERVAL segundos
+          ELAPSED=$INITIAL_DELAY
+          NEW_DIGEST=""
+          IMAGE_FOUND=false
+          
+          echo "🔍 Buscando nueva imagen..."
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            # Verificar si la imagen latest existe y obtener su digest
+            if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+              NEW_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
+              
+              # Si hay digest anterior, verificar que cambió
+              if [ -n "$OLD_DIGEST" ] && [ -n "$NEW_DIGEST" ] && [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
+                echo "⏳ Imagen existe pero aún no cambió (${ELAPSED}s/${MAX_WAIT}s)..."
+                echo "   Digest actual: ${NEW_DIGEST:0:20}..."
+              else
+                # Imagen nueva detectada o primera build
+                echo "✅ Nueva imagen detectada!"
+                if [ -n "$NEW_DIGEST" ]; then
+                  echo "   Digest nuevo: ${NEW_DIGEST:0:20}..."
+                fi
+                IMAGE_FOUND=true
+                break
+              fi
+            else
+              echo "⏳ Imagen aún no disponible... (${ELAPSED}s/${MAX_WAIT}s)"
+            fi
+            
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          
+          if [ "$IMAGE_FOUND" = "false" ]; then
+            echo "⚠️  Timeout esperando build de kpack (${MAX_WAIT}s)"
+            echo "   Esto puede significar que:"
+            echo "   1. kpack aún está construyendo (builds largos)"
+            echo "   2. kpack no detectó el cambio"
+            echo "   3. El build falló"
+            echo "duration=${DURATION}" >> $GITHUB_OUTPUT
+            echo "digest=" >> $GITHUB_OUTPUT
+            echo "status=timeout" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "✅ Build completado en ${DURATION}s"
+            echo "duration=${DURATION}" >> $GITHUB_OUTPUT
+            echo "digest=${NEW_DIGEST}" >> $GITHUB_OUTPUT
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi

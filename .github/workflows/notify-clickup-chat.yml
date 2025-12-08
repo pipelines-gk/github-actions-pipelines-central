@@ -38,9 +38,13 @@ jobs:
       - name: Prepare commit message
         id: commit
         env:
+          COMMIT_MESSAGE_INPUT: ${{ inputs.commit_message }}
           COMMIT_MESSAGE_HEAD: ${{ github.event.head_commit.message }}
         run: |
-          MESSAGE="$COMMIT_MESSAGE_HEAD"
+          MESSAGE="$COMMIT_MESSAGE_INPUT"
+          if [ -z "$MESSAGE" ]; then
+            MESSAGE="$COMMIT_MESSAGE_HEAD"
+          fi
           if [ -z "$MESSAGE" ]; then
             MESSAGE="Manual workflow dispatch"
           fi
@@ -57,12 +61,21 @@ jobs:
           VERSION: ${{ inputs.version }}
           DURATION: ${{ inputs.build_duration }}
           WORKFLOW_NAME: ${{ github.workflow }}
-          REPOSITORY: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
-          RUN_ID: ${{ github.run_id }}
+          REPOSITORY_INPUT: ${{ inputs.repository }}
+          REPOSITORY_GITHUB: ${{ github.repository }}
+          BRANCH_INPUT: ${{ inputs.branch_name }}
+          BRANCH_GITHUB: ${{ github.ref_name }}
+          RUN_ID_INPUT: ${{ inputs.run_id }}
+          RUN_ID_GITHUB: ${{ github.run_id }}
+          RUN_URL_INPUT: ${{ inputs.run_url }}
           SERVER_URL: ${{ github.server_url }}
         run: |
-          GITHUB_URL="$SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID"
+          REPOSITORY="${REPOSITORY_INPUT:-$REPOSITORY_GITHUB}"
+          BRANCH="${BRANCH_INPUT:-$BRANCH_GITHUB}"
+          RUN_ID="${RUN_ID_INPUT:-$RUN_ID_GITHUB}"
+          RUN_URL="${RUN_URL_INPUT:-$SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID}"
+          
+          GITHUB_URL="$RUN_URL"
 
           MESSAGE="$EMOJI **Deployment $STATUS_TEXT**\n\n"
           MESSAGE+="---\n\n"
@@ -81,7 +94,7 @@ jobs:
           MESSAGE+="• 📂 **Repository:** \`$REPOSITORY\`\n"
           MESSAGE+="• 🔢 **Run ID:** \`$RUN_ID\`\n"
 
-          if [ -n "$DURATION" ] && [ "$DURATION" != "" ]; then
+          if [ -n "$DURATION" ] && [ "$DURATION" != "" ] && [ "$DURATION" != "N/A" ]; then
             MESSAGE+="• ⏱️ **Duration:** $DURATION\n"
           fi
 

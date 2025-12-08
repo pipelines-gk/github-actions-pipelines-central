@@ -1,0 +1,72 @@
+name: Tag kpack Image
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        required: true
+        type: string
+        description: "Docker registry URL"
+      image_name:
+        required: true
+        type: string
+        description: "Image name without registry"
+      tags:
+        required: true
+        type: string
+        description: "Comma-separated list of tags to apply"
+    secrets:
+      DOCR_USERNAME:
+        required: true
+      DOCR_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  tag-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.DOCR_USERNAME }}
+          password: ${{ secrets.DOCR_PASSWORD }}
+
+      - name: Pull and tag images
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+          TAGS: ${{ inputs.tags }}
+        run: |
+          SOURCE_IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
+          echo "📥 Pulling image: $SOURCE_IMAGE"
+          docker pull "$SOURCE_IMAGE" || {
+            echo "❌ Error: No se pudo hacer pull de la imagen latest"
+            echo "Esto puede significar que kpack aún no ha terminado el build"
+            exit 1
+          }
+          
+          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+          
+          echo "🏷️  Taggeando imagen con ${#TAG_ARRAY[@]} tag(s)..."
+          
+          for TAG in "${TAG_ARRAY[@]}"; do
+            TAG=$(echo "$TAG" | xargs) # Trim whitespace
+            TAGGED_IMAGE="${REGISTRY}/${IMAGE_NAME}:${TAG}"
+            
+            echo "   Tagging: ${TAG}"
+            docker tag "$SOURCE_IMAGE" "$TAGGED_IMAGE"
+            docker push "$TAGGED_IMAGE"
+            
+            echo "   ✅ Pushed: $TAGGED_IMAGE"
+          done
+          
+          echo ""
+          echo "✅ Todas las imágenes fueron taggeadas y pusheadas:"
+          for TAG in "${TAG_ARRAY[@]}"; do
+            TAG=$(echo "$TAG" | xargs)
+            echo "   - ${REGISTRY}/${IMAGE_NAME}:${TAG}"
+          done
