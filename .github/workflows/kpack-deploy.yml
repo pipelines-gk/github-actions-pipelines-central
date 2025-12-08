@@ -173,7 +173,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_new_image: ${{ steps.compare.outputs.has_new_image }}
-      build_digest: ${{ steps.build_digest.outputs.build_digest }}
+      build_digest: ${{ steps.wait_kpack.outputs.new_digest }}
       last_digest: ${{ steps.last_digest.outputs.last_digest }}
     steps:
       - name: Login to Docker Registry
@@ -213,32 +213,104 @@ jobs:
             echo "is_first_release=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Read build digest from kpack
-        id: build_digest
+      - name: Wait for kpack to finish building
+        id: wait_kpack
         env:
           REGISTRY: ${{ inputs.registry }}
           IMAGE_NAME: ${{ inputs.image_name || format('gainkode/{0}', inputs.project_name) }}
+          COMMIT_SHA: ${{ needs.versioning.outputs.sha_short }}
         run: |
-          IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:build"
+          INITIAL_DELAY=30
+          MAX_WAIT=480
+          CHECK_INTERVAL=10
+          MIN_WAIT=90
           
-          echo "🔍 Leyendo digest de imagen de kpack:"
-          echo "   ${IMAGE}"
+          echo "⏳ Esperando que kpack termine el build..."
+          echo "   Commit SHA: ${COMMIT_SHA:0:7}"
+          echo "   Imagen: $IMAGE"
+          echo "   Timeout máximo: ${MAX_WAIT}s"
           
-          if ! docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
-            echo "❌ Error: No se pudo leer el digest de :latest"
-            echo "Esto puede significar que kpack aún no ha terminado el build"
+          # Delay inicial: dar tiempo a kpack para detectar el cambio y comenzar el build
+          echo "⏸️  Esperando ${INITIAL_DELAY}s para que kpack detecte el cambio..."
+          sleep $INITIAL_DELAY
+          
+          # Leer digest inicial de :build (puede ser la imagen vieja)
+          OLD_DIGEST=""
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            OLD_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
+            if [ -n "$OLD_DIGEST" ]; then
+              echo "📦 Digest inicial de :build (imagen actual): ${OLD_DIGEST:0:20}..."
+            fi
+          else
+            echo "📦 No hay imagen inicial en :build (primera build o imagen eliminada)"
+          fi
+          
+          # Esperar a que kpack termine: el digest debe cambiar
+          # O esperar tiempo mínimo si el digest no cambia (código idéntico)
+          ELAPSED=$INITIAL_DELAY
+          NEW_DIGEST=""
+          BUILD_COMPLETE=false
+          
+          echo "🔍 Esperando build de kpack..."
+          echo "   Estrategia: Esperar cambio de digest o ${MIN_WAIT}s mínimo"
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+              NEW_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1 || echo "")
+              
+              # Si el digest cambió, kpack terminó con una imagen nueva en :build
+              if [ -n "$OLD_DIGEST" ] && [ -n "$NEW_DIGEST" ] && [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
+                echo "✅ Digest de :build cambió - kpack terminó el build!"
+                echo "   Digest anterior: ${OLD_DIGEST:0:20}..."
+                echo "   Digest nuevo: ${NEW_DIGEST:0:20}..."
+                BUILD_COMPLETE=true
+                break
+              fi
+              
+              # Si pasó el tiempo mínimo y la imagen existe, continuar
+              # (puede ser código idéntico o kpack aún actualizando)
+              if [ $ELAPSED -ge $MIN_WAIT ]; then
+                if [ -n "$OLD_DIGEST" ] && [ "$OLD_DIGEST" = "$NEW_DIGEST" ]; then
+                  echo "⚠️  Tiempo mínimo alcanzado pero digest no cambió (${ELAPSED}s)"
+                  echo "   Esto puede significar código idéntico o kpack aún actualizando"
+                  echo "   Digest actual: ${NEW_DIGEST:0:20}..."
+                  echo "   Continuando - se comparará con última versión publicada"
+                else
+                  echo "✅ Tiempo mínimo alcanzado - imagen existe (${ELAPSED}s)"
+                  echo "   Digest: ${NEW_DIGEST:0:20}..."
+                fi
+                BUILD_COMPLETE=true
+                break
+              fi
+              
+              echo "⏳ Esperando tiempo mínimo... (${ELAPSED}s/${MIN_WAIT}s)"
+            else
+              if [ $ELAPSED -ge $MIN_WAIT ]; then
+                echo "⚠️  Tiempo mínimo alcanzado pero imagen aún no disponible (${ELAPSED}s/${MAX_WAIT}s)"
+                echo "   kpack puede estar aún construyendo..."
+              else
+                echo "⏳ Imagen aún no disponible... (${ELAPSED}s/${MIN_WAIT}s)"
+              fi
+            fi
+            
+            sleep $CHECK_INTERVAL
+            ELAPSED=$((ELAPSED + CHECK_INTERVAL))
+          done
+          
+          if [ "$BUILD_COMPLETE" = "false" ]; then
+            echo "❌ Timeout esperando build de kpack (${MAX_WAIT}s)"
+            echo "   Esto puede significar que kpack aún está construyendo o el build falló"
             exit 1
           fi
           
-          BUILD_DIGEST=$(docker manifest inspect "$IMAGE" 2>/dev/null | grep -oP '"digest":\s*"\K[^"]+' | head -1)
-          
-          if [ -z "$BUILD_DIGEST" ]; then
-            echo "❌ No se pudo extraer el digest de :latest"
+          if [ -z "$NEW_DIGEST" ]; then
+            echo "❌ No se pudo obtener digest de la imagen"
             exit 1
           fi
           
-          echo "✅ Digest de build (kpack): ${BUILD_DIGEST:0:20}..."
-          echo "build_digest=${BUILD_DIGEST}" >> $GITHUB_OUTPUT
+          echo "✅ Build de kpack completado - digest final de :build: ${NEW_DIGEST:0:20}..."
+          echo "new_digest=${NEW_DIGEST}" >> $GITHUB_OUTPUT
 
       - name: Read last published version digest
         id: last_digest
@@ -273,7 +345,7 @@ jobs:
       - name: Compare build vs last published digest
         id: compare
         env:
-          BUILD_DIGEST: ${{ steps.build_digest.outputs.build_digest }}
+          BUILD_DIGEST: ${{ steps.wait_kpack.outputs.new_digest }}
           LAST_DIGEST: ${{ steps.last_digest.outputs.last_digest }}
           IS_FIRST_RELEASE: ${{ steps.last_version.outputs.is_first_release }}
         run: |
@@ -290,12 +362,12 @@ jobs:
           fi
           
           echo "🔍 Comparando digests:"
-          echo "   Build (kpack):    ${BUILD_DIGEST:0:20}..."
-          echo "   Última versión:   ${LAST_DIGEST:0:20}..."
+          echo "   Build nuevo (kpack): ${BUILD_DIGEST:0:20}..."
+          echo "   Última versión:      ${LAST_DIGEST:0:20}..."
           
           if [ "$BUILD_DIGEST" = "$LAST_DIGEST" ]; then
-            echo "❌ La imagen de kpack es IGUAL a la última publicada"
-            echo "❌ No hay build nuevo. Cancelando publicación."
+            echo "❌ La imagen nueva de kpack es IGUAL a la última publicada"
+            echo "❌ No hay cambios reales. Cancelando publicación."
             echo "has_new_image=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -325,15 +397,15 @@ jobs:
           
           echo "🚀 Publicando imagen ${IMAGE_BASE}:${VERSION}"
           
-          echo "📥 Pulling latest image..."
-          docker pull "${IMAGE_BASE}:latest" || {
-            echo "❌ Error: No se pudo hacer pull de la imagen latest"
+          echo "📥 Pulling build image from kpack..."
+          docker pull "${IMAGE_BASE}:build" || {
+            echo "❌ Error: No se pudo hacer pull de la imagen :build"
             echo "Esto puede significar que kpack aún no ha terminado el build"
             exit 1
           }
           
-          echo "🏷️  Tagging ${IMAGE_BASE}:latest -> ${IMAGE_BASE}:${VERSION}"
-          docker tag "${IMAGE_BASE}:latest" "${IMAGE_BASE}:${VERSION}"
+          echo "🏷️  Tagging ${IMAGE_BASE}:build -> ${IMAGE_BASE}:${VERSION}"
+          docker tag "${IMAGE_BASE}:build" "${IMAGE_BASE}:${VERSION}"
           
           echo "📤 Pushing ${IMAGE_BASE}:${VERSION}"
           docker push "${IMAGE_BASE}:${VERSION}"
@@ -474,4 +546,5 @@ jobs:
       repository: ${{ github.repository }}
       run_id: ${{ github.run_id }}
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
 
