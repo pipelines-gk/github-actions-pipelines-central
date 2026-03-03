@@ -42,28 +42,14 @@ on:
 
 jobs:
   notify-telegram:
-    uses: ./.github/workflows/notify-telegram.yml
-    with:
-      workflow_status: ${{ inputs.workflow_status }}
-      version: ${{ inputs.version }}
-      project_name: ${{ inputs.project_name }}
-      build_duration: ${{ inputs.build_duration }}
-      commit_message: ${{ inputs.commit_message }}
-      branch_name: ${{ inputs.branch_name }}
-      repository: ${{ inputs.repository }}
-      run_id: ${{ inputs.run_id }}
-      run_url: ${{ inputs.run_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip notifications
+        run: echo "Notifications disabled"
 
   notify-clickup:
-    uses: ./.github/workflows/notify-clickup-chat.yml
-    with:
-      workflow_status: ${{ inputs.workflow_status }}
-      version: ${{ inputs.version }}
-      project_name: ${{ inputs.project_name }}
-      build_duration: ${{ inputs.build_duration }}
-      commit_message: ${{ inputs.commit_message }}
-      branch_name: ${{ inputs.branch_name }}
-      repository: ${{ inputs.repository }}
-      run_id: ${{ inputs.run_id }}
-      run_url: ${{ inputs.run_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip notifications
+        run: echo "Notifications disabled"
 
